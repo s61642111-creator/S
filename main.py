@@ -423,16 +423,16 @@ async def _send_quiz(q, x: Question):
         f"📊 ease:{x.ease_factor:.1f} | خطأ:{x.wrong_count}\\n\\n"
         f"{x.text}",
         reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
-    )
-        async def quiz_handler(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        q = u.callback_query; await q.answer()
-        data = q.data
-        if data == "quiz_end":
-        ctx.user_data.pop("quiz_id",None); ctx.user_data.pop("quiz_mode",None)
-        ctx.user_data.pop("quiz_tag",None)
-        await q.edit_message_text("✅ انتهت الجلسة. أحسنت! 👏")
-        await q.message.reply_text("اختر:", reply_markup=main_kb()); return
+        parse_mode="Markdown")
+
+async def quiz_handler(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = u.callback_query; await q.answer()
+    data = q.data
+    if data == "quiz_end":
+    ctx.user_data.pop("quiz_id",None); ctx.user_data.pop("quiz_mode",None)
+    ctx.user_data.pop("quiz_tag",None)
+    await q.edit_message_text("✅ انتهت الجلسة. أحسنت! 👏")
+    await q.message.reply_text("اختر:", reply_markup=main_kb()); return
 
     qid  = ctx.user_data.get("quiz_id")
     mode = ctx.user_data.get("quiz_mode","all")
