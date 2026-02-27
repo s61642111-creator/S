@@ -1064,14 +1064,14 @@ async def post_init(app: Application):
         )
     logger.info("✅ البوت جاهز للعمل!")
 
-async def main():
-    # تهيئة قاعدة البيانات
-    await init_db()
+def main():
+    # تهيئة قاعدة البيانات بشكل متزامن (مرة واحدة)
+    asyncio.run(init_db())
     
     # بناء التطبيق
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     
-    # إضافة جميع المعالجات (handlers) - كما كانت سابقاً
+    # إضافة جميع المعالجات (handlers) - كما هي
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
@@ -1107,11 +1107,8 @@ async def main():
     app.add_error_handler(error_handler)
     
     logger.info("🚀 تشغيل البوت...")
-    # استخدام run_polling مباشرة - هو من سيدير حلقة الأحداث
-    await app.run_polling(drop_pending_updates=True)
+    # run_polling يدير حلقة الأحداث بنفسه (لا حاجة لـ await)
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("🛑 تم إيقاف البوت.")
+    main()
