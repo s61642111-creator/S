@@ -488,7 +488,8 @@ add_conv = ConversationHandler(
         ],
     },
     fallbacks=[CommandHandler("cancel", add_cancel)],
-    allow_reentry=True
+    allow_reentry=True,
+    per_message=True,
 )
 
 # ==================== معالجات الكويز ====================
@@ -930,22 +931,31 @@ async def daily_report_job(context: ContextTypes.DEFAULT_TYPE):
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error("استثناء:", exc_info=context.error)
     if update and hasattr(update, "effective_chat") and update.effective_chat:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ حدث خطأ داخلي.")
-
-# ==================== الإعداد والتشغيل ====================
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ حدث خطأ 
+        
+        # ==================== الإعداد والتشغيل ====================
 async def post_init(app):
     app.bot_data["allowed_user_id"] = ALLOWED_USER_ID
-    app.job_queue.run_daily(daily_report_job, time=datetime.time(hour=DAILY_REPORT_HOUR, minute=DAILY_REPORT_MINUTE), name="daily_report")
+    if app.job_queue:
+        app.job_queue.run_daily(
+            daily_report_job,
+            time=datetime.time(hour=DAILY_REPORT_HOUR, minute=DAILY_REPORT_MINUTE),
+            name="daily_report"
+        )
     logger.info("✅ البوت جاهز للعمل!")
 
 async def shutdown(app):
     await engine.dispose()
     logger.info("🛑 تم إغلاق قاعدة البيانات.")
 
-def main():
+async def main():
+    # تهيئة قاعدة البيانات
+    await init_db()
+    
+    # بناء التطبيق
     app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).post_shutdown(shutdown).build()
     
-    # أوامر
+    # إضافة المعالجات (handlers) - نفس الكود السابق ولكن نضعه هنا
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
@@ -958,7 +968,7 @@ def main():
     app.add_handler(CommandHandler("today", today_cmd))
     
     # محادثة الإضافة
-    app.add_handler(add_conv)
+    app.add_handler(add_conv)  # تأكد من تعريف add_conv قبل main()
     
     # معالجات القوائم
     app.add_handler(CallbackQueryHandler(menu_list, pattern="^menu_list$"))
@@ -990,8 +1000,7 @@ def main():
     app.add_error_handler(error_handler)
     
     logger.info("🚀 تشغيل البوت...")
-    app.run_polling(drop_pending_updates=True)
+    await app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    asyncio.run(init_db())
-    main()
+    asyncio.run(main())
