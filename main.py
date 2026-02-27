@@ -122,11 +122,11 @@ class Database:
             result = await session.execute(select(Question).order_by(Question.id))
             return result.scalars().all()
 
-@staticmethod
-async def get_stats() -> Dict[str, Any]:
-    async with async_session() as session:
-        total = await session.scalar(select(func.count(Question.id))) or 0
-        due = await session.scalar(
+    @staticmethod
+    async def get_stats() -> Dict[str, Any]:
+        async with async_session() as session:
+            total = await session.scalar(select(func.count(Question.id))) or 0
+            due = await session.scalar(
             select(func.count(Question.id)).where(
                 Question.next_review <= dt.now(timezone.utc).replace(tzinfo=None)
             )
