@@ -424,7 +424,25 @@ async def _send_quiz(q, x: Question):
         f"{x.text}",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
-    )
+)
+    async def quiz_handler(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = u.callback_query; await q.answer()
+    data = q.data
+    if data == "quiz_end":
+        ctx.user_data.pop("quiz_id",None); ctx.user_data.pop("quiz_mode",None)
+        ctx.user_data.pop("quiz_tag",None)
+        await q.edit_message_text("✅ انتهت الجلسة. أحسنت! 👏")
+        await q.message.reply_text("اختر:", reply_markup=main_kb()); return
+
+    qid  = ctx.user_data.get("quiz_id")
+    mode = ctx.user_data.get("quiz_mode","all")
+    tag  = ctx.user_data.get("quiz_tag")
+    x    = await db.get_question(qid) if qid else None
+    if not x: await q.edit_message_text("❗ /start"); return
+
+    quality_map = {"quiz_good":4,"quiz_easy":5,"quiz_hard":3,"quiz_again":0}
+    quality = quality_map.get(data, 4)
+    
 async def quiz_option(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """معالج الأزرار التفاعلية"""
     data = u.callback_query.data.split("_")
