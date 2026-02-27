@@ -424,10 +424,7 @@ async def _send_quiz(q, x: Question):
         f"{x.text}",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
-     
     )
-
-    
     async def quiz_handler(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = u.callback_query; await q.answer()
     data = q.data
@@ -442,6 +439,10 @@ async def _send_quiz(q, x: Question):
     tag  = ctx.user_data.get("quiz_tag")
     x    = await db.get_question(qid) if qid else None
     if not x: await q.edit_message_text("❗ /start"); return
+
+    quality_map = {"quiz_good":4,"quiz_easy":5,"quiz_hard":3,"quiz_again":0}
+    quality = quality_map.get(data, 4)
+    
 
     quality_map = {"quiz_good":4,"quiz_easy":5,"quiz_hard":3,"quiz_again":0}
     quality = quality_map.get(data, 4)
