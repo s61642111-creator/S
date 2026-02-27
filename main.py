@@ -5,8 +5,6 @@
 Quiz Master Pro 2026 - الإصدار الموحد في ملف واحد
 جميع الميزات: SM-2، تحليلات، أزرار تفاعلية، Gamification، دعم الوسوم، تقارير يومية.
 """
-import sys
-!{sys.executable} -m pip install python-telegram-bot[job-queue] sqlalchemy aiosqlite
 import asyncio
 import logging
 import re
