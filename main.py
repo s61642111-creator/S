@@ -30,7 +30,9 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, 
 from sqlalchemy.orm import declarative_base
 
 # ==================== الإعدادات ====================
-DATABASE_URL = "sqlite+aiosqlite:///quiz_data.db"
+BOT_TOKEN = "8242666905:AAHljuGOMBxWmYMsjPzAK0zDL7_tAqEYqeg"   # ضع التوكن الحقيقي من BotFather
+ALLOWED_USER_ID = 8150720268                            # ضع معرفك الرقمي (تحصل عليه من @userinfobot)
+DATABASE_URL = "sqlite+aiosqlite:///quiz_data.db"      # مسار قاعدة البيانات (
 # إعداد التسجيل
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
