@@ -417,7 +417,7 @@ async def _send_quiz(q, x: Question):
     
     keyboard.append([InlineKeyboardButton("⏭ تخطي", callback_data="quiz_skip")])
     
-await q.edit_message_text(
+await q.edit_message_text(    
     f"🧠 *مراجعة #{x.id}*{tags_s}{auto_s}\\n"
     f"🔥 {prio_txt(x.priority)}\\n"
     f"📊 ease:{x.ease_factor:.1f} | خطأ:{x.wrong_count}\\n\\n"
@@ -430,9 +430,8 @@ async def quiz_handler(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """معالج أزرار الكويز"""
     q = u.callback_query
     await q.answer()
-    data
- = q.data
-    if data == "quiz_end":
+    data = q.data    
+    if data == "quiz_end":    
     ctx.user_data.pop("quiz_id",None); ctx.user_data.pop("quiz_mode",None)
     ctx.user_data.pop("quiz_tag",None)
     await q.edit_message_text("✅ انتهت الجلسة. أحسنت! 👏")
@@ -447,9 +446,6 @@ async def quiz_handler(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     quality_map = {"quiz_good":4,"quiz_easy":5,"quiz_hard":3,"quiz_again":0}
     quality = quality_map.get(data, 4)
     
-
-    quality_map = {"quiz_good":4,"quiz_easy":5,"quiz_hard":3,"quiz_again":0}
-    quality = quality_map.get(data, 4)
     
 async def quiz_option(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """معالج الأزرار التفاعلية"""
