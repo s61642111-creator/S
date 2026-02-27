@@ -944,7 +944,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     if update and hasattr(update, "effective_chat") and update.effective_chat:
         await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ حدث خطأ داخلي.")
 
-# ==================== الإعداد والتشغيل ====================
+# ==================== الإعداد والتشغيل ====================# ==================== الإعداد والتشغيل المبسط ====================
 async def post_init(app):
     app.bot_data["allowed_user_id"] = ALLOWED_USER_ID
     if app.job_queue:
@@ -955,18 +955,16 @@ async def post_init(app):
         )
     logger.info("✅ البوت جاهز للعمل!")
 
-# إضافة دالة shutdown المفقودة
-async def shutdown(app):
-    """تُستدعى عند إيقاف التطبيق"""
-    await engine.dispose()
-    logger.info("🛑 تم إغلاق قاعدة البيانات.")
+# لا حاجة لدالة shutdown هنا، سنعتمد على الإغلاق التلقائي
 
-async def main():
-    await init_db()
+def main():
+    # تهيئة قاعدة البيانات بشكل منفصل (مرة واحدة)
+    asyncio.run(init_db())
     
-    app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).post_shutdown(shutdown).build()
+    # بناء التطبيق بدون post_shutdown
+    app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
     
-    # إضافة جميع المعالجات (handlers) - كما هي
+    # إضافة جميع المعالجات (كما هي)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
@@ -977,7 +975,9 @@ async def main():
     app.add_handler(CommandHandler("list", list_cmd))
     app.add_handler(CommandHandler("weak", weak_cmd))
     app.add_handler(CommandHandler("today", today_cmd))
-    app.add_handler(add_conv)   # ConversationHandler
+    
+    # محادثة الإضافة
+    app.add_handler(add_conv)
     
     # معالجات القوائم
     app.add_handler(CallbackQueryHandler(menu_list, pattern="^menu_list$"))
@@ -1009,7 +1009,8 @@ async def main():
     app.add_error_handler(error_handler)
     
     logger.info("🚀 تشغيل البوت...")
-    await app.run_polling(drop_pending_updates=True)
+    # run_polling يدير الحلقة بنفسه، لا حاجة لـ asyncio.run هنا
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
