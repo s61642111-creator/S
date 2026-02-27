@@ -424,7 +424,10 @@ async def _send_quiz(q, x: Question):
         f"{x.text}",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
-)
+     
+    )
+
+    
     async def quiz_handler(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = u.callback_query; await q.answer()
     data = q.data
