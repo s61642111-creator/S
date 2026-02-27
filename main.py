@@ -35,9 +35,6 @@ from sqlalchemy.orm import declarative_base
 
 # ==================== إعدادات البيئة ====================
 BOT_TOKEN = os.environ.get("8242666905:AAHljuGOMBxWmYMsjPzAK0zDL7_tAqEYqeg")
-if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN غير موجود في متغيرات البيئة")
-
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "6782657661"))
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///quiz_data.db")
 DAILY_REPORT_HOUR = int(os.environ.get("DAILY_REPORT_HOUR", "5"))
