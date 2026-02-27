@@ -944,7 +944,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     if update and hasattr(update, "effective_chat") and update.effective_chat:
         await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ حدث خطأ داخلي.")
 
-# ==================== الإعداد والتشغيل ====================# ==================== الإعداد والتشغيل ====================
+# ==================== الإعداد والتشغيل ====================
 async def post_init(app):
     app.bot_data["allowed_user_id"] = ALLOWED_USER_ID
     if app.job_queue:
@@ -955,12 +955,18 @@ async def post_init(app):
         )
     logger.info("✅ البوت جاهز للعمل!")
 
+# إضافة دالة shutdown المفقودة
+async def shutdown(app):
+    """تُستدعى عند إيقاف التطبيق"""
+    await engine.dispose()
+    logger.info("🛑 تم إغلاق قاعدة البيانات.")
+
 async def main():
     await init_db()
     
     app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).post_shutdown(shutdown).build()
     
-    # إضافة جميع المعالجات (كما هي)
+    # إضافة جميع المعالجات (handlers) - كما هي
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
@@ -971,7 +977,9 @@ async def main():
     app.add_handler(CommandHandler("list", list_cmd))
     app.add_handler(CommandHandler("weak", weak_cmd))
     app.add_handler(CommandHandler("today", today_cmd))
-    app.add_handler(add_conv)
+    app.add_handler(add_conv)   # ConversationHandler
+    
+    # معالجات القوائم
     app.add_handler(CallbackQueryHandler(menu_list, pattern="^menu_list$"))
     app.add_handler(CallbackQueryHandler(menu_search, pattern="^menu_search$"))
     app.add_handler(CallbackQueryHandler(menu_stats, pattern="^menu_stats$"))
@@ -980,6 +988,8 @@ async def main():
     app.add_handler(CallbackQueryHandler(menu_clear, pattern="^menu_clear$"))
     app.add_handler(CallbackQueryHandler(clear_decision, pattern="^clear_(yes|no)$"))
     app.add_handler(CallbackQueryHandler(menu_back, pattern="^menu_back$"))
+    
+    # معالجات الكويز
     app.add_handler(CallbackQueryHandler(menu_quiz_all, pattern="^menu_quiz_all$"))
     app.add_handler(CallbackQueryHandler(menu_quiz_due, pattern="^menu_quiz_due$"))
     app.add_handler(CallbackQueryHandler(menu_quiz_weak, pattern="^menu_quiz_weak$"))
@@ -990,8 +1000,12 @@ async def main():
     app.add_handler(CallbackQueryHandler(quiz_skip, pattern="^skip_"))
     app.add_handler(CallbackQueryHandler(next_question, pattern="^next_question$"))
     app.add_handler(CallbackQueryHandler(quiz_end, pattern="^end_quiz$"))
+    
+    # معالجات الرسائل
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.POLL, handle_poll))
+    
+    # معالج الأخطاء
     app.add_error_handler(error_handler)
     
     logger.info("🚀 تشغيل البوت...")
