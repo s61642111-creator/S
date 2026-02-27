@@ -428,11 +428,11 @@ await q.edit_message_text(
 
 async def quiz_handler(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """معالج أزرار الكويز"""
-    q = u.callback_query   
-    await q.answer()    
-    data = q.data    
- if data == "quiz_end":    
-     ctx.user_data.pop("quiz_id",None); ctx.user_data.pop("quiz_mode",None)
+    q = u.callback_query
+    await q.answer()
+    data = q.data
+    if data == "quiz_end":
+    ctx.user_data.pop("quiz_id",None); ctx.user_data.pop("quiz_mode",None)
     ctx.user_data.pop("quiz_tag",None)
     await q.edit_message_text("✅ انتهت الجلسة. أحسنت! 👏")
     await q.message.reply_text("اختر:", reply_markup=main_kb()); return
