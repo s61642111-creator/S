@@ -23,14 +23,6 @@ ADD_TEXT, ADD_PRIO, ADD_TAGS = range(3)
 
 def _now(): return datetime.now(timezone.utc)
 
-def is_auth(u: Update) -> bool:
-    uid = u.effective_user.id if u.effective_user else None
-    return uid == settings.ALLOWED_USER_ID
-
-async def reject(u: Update):
-    if u.message:         await u.message.reply_text("❌ هذا البوت خاص بصاحبه فقط.")
-    elif u.callback_query: await u.callback_query.answer("❌ وصول مرفوض.", show_alert=True)
-
 def clean(raw: str) -> str:
     lines, out = raw.splitlines(), []
     for line in lines:
@@ -413,34 +405,60 @@ async def quiz_tag_selected(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await _send_quiz(q, nxt)
 
 async def _send_quiz(q, x: Question):
+    """سؤال تفاعلي بـ 4 أزرار + شرح عند الخطأ"""
     tags_s = f" [{', '.join(x.tags)}]" if x.tags else ""
     auto_s = " 🤖" if x.auto_captured else ""
+    
+    # أزرار الخيارات
+    keyboard = []
+    labels = ['أ', 'ب', 'ج', 'د']
+    for i in range(min(4, len(x.options))):
+        keyboard.append([InlineKeyboardButton(
+            f"{labels[i]}) {x.options[i][:50]}...", 
+            callback_data=f"qopt_{x.id}_{i}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton("⏭ تخطي", callback_data="quiz_skip")])
+    
     await q.edit_message_text(
-        f"🧠 *مراجعة*\n#{x.id} | {prio_txt(x.priority)}{tags_s}{auto_s}\n"
-        f"ease:{x.ease_factor:.1f} | مراجعات:{x.total_reviews} | خطأ:{x.wrong_count}\n\n"
+        f"🧠 *مراجعة #{x.id}*{tags_s}{auto_s}\\n"
+        f"🔥 {prio_txt(x.priority)}\\n"
+        f"📊 ease:{x.ease_factor:.1f} | خطأ:{x.wrong_count}\\n\\n"
         f"{x.text}",
-        parse_mode="Markdown", reply_markup=quiz_kb()
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
     )
-
-async def quiz_handler(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = u.callback_query; await q.answer()
-    data = q.data
-    if data == "quiz_end":
-        ctx.user_data.pop("quiz_id",None); ctx.user_data.pop("quiz_mode",None)
-        ctx.user_data.pop("quiz_tag",None)
-        await q.edit_message_text("✅ انتهت الجلسة. أحسنت! 👏")
-        await q.message.reply_text("اختر:", reply_markup=main_kb()); return
-
-    qid  = ctx.user_data.get("quiz_id")
-    mode = ctx.user_data.get("quiz_mode","all")
-    tag  = ctx.user_data.get("quiz_tag")
-    x    = await db.get_question(qid) if qid else None
-    if not x: await q.edit_message_text("❗ /start"); return
-
-    quality_map = {"quiz_good":4,"quiz_easy":5,"quiz_hard":3,"quiz_again":0}
-    quality = quality_map.get(data, 4)
+async def quiz_option(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """معالج الأزرار التفاعلية"""
+    data = u.callback_query.data.split("_")
+    if data[0] != "qopt": return
+    
+    qid, opt_idx = int(data[1]), int(data[2])
+    x = await db.get_question(qid)
+    if not x: return await u.callback_query.answer("❌ خطأ!")
+    
+    correct = opt_idx == x.correct_index
+    quality = 5 if correct else 0
+    
     updated = engine.review(x, quality)
     await db.update_question(updated)
+    
+    # النتيجة + الشرح
+    labels = ['أ', 'ب', 'ج', 'د']
+    result = f"{'✅ صحيح! 👏' if correct else '❌ خطأ! 📚'}"
+    
+    if not correct and x.explanation:
+        result += f"\\n💡 *الشرح:* {x.explanation}"
+    
+    result += f"\\n📊 ease: {updated.ease_factor:.1f}"
+    
+    await u.callback_query.answer(result, show_alert=True)
+    
+    # التالي
+    all_q = await db.all_questions()
+    nxt = get_next_question(all_q)
+    if nxt:
+        await _send_quiz(u.callback_query, nxt)
 
     # Gamification feedback
     all_q = await db.all_questions()
