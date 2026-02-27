@@ -122,8 +122,8 @@ class Database:
             result = await session.execute(select(Question).order_by(Question.id))
             return result.scalars().all()
 
-    @staticmethod
-    async def get_stats() -> Dict[str, Any]:
+@staticmethod
+async def get_stats() -> Dict[str, Any]:
     async with async_session() as session:
         total = await session.scalar(select(func.count(Question.id))) or 0
         due = await session.scalar(
