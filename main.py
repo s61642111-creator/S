@@ -30,7 +30,7 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, 
 from sqlalchemy.orm import declarative_base
 
 # ==================== الإعدادات ====================
-
+DATABASE_URL = "sqlite+aiosqlite:///quiz_data.db"
 # إعداد التسجيل
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
