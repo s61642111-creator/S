@@ -561,6 +561,7 @@ def main():
     app.add_handler(CallbackQueryHandler(lambda u,c: _quiz_mode(u,c,"due"),  pattern="^menu_quiz_due$"))
     app.add_handler(CallbackQueryHandler(lambda u,c: _quiz_mode(u,c,"weak"), pattern="^menu_quiz_weak$"))
     app.add_handler(CallbackQueryHandler(lambda u,c: asyncio.create_task(start(u,c)), pattern="^menu_back$"))
+    app.add_handler(CallbackQueryHandler(quiz_option, pattern="^qopt_"))
 
     app.run_polling(drop_pending_updates=True)
     logger.info("🚀 Quiz Master Pro v2 شغال!")
