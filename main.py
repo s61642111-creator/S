@@ -215,7 +215,7 @@ def clean_text(raw: str) -> str:
 
 def extract_options(text: str):
     """
-    استخراج الخيارات والشرح من النص، مع محاولة التقاط الشروحات المخفية.
+    استخراج الخيارات والشرح من النص، مع إزالة الخيارات بالكامل من نص السؤال.
     تُرجع (نص السؤال, قائمة الخيارات, index الإجابة الصحيحة, نص الشرح)
     """
     lines = text.splitlines()
@@ -224,82 +224,68 @@ def extract_options(text: str):
     explanation = None
     correct_index = -1
 
-    # أنماط الخيارات
-    patterns = [r'^[أ-هأ-ي]\s*[\)\-.]+', r'^[a-zA-Z]\)', r'^\d+\)']
+    # أنماط أكثر دقة للخيارات (تلتقط الحرف + أي فاصل بعدها)
+    patterns = [
+        r'^[أ-هأ-ي]\s*[\)\-.–—]',   # أ)  أو أ-  أو أ.  أو أ– 
+        r'^[a-zA-Z]\s*[\)\-.–—]',    # a)  أو b-  إلخ
+        r'^\d+\s*[\)\-.–—]',          # 1)  أو 2-  إلخ
+    ]
     
-    # كلمات مفتاحية للشرح (حتى لو كانت في وسط السطر)
+    # كلمات مفتاحية للشرح (أكثر شمولاً)
     explanation_keywords = ["لأن", "حيث", "أي أن", "بمعنى", "توضيح", "شرح", "ملاحظة", 
                             "يعني", "وهو", "أي", "نلاحظ", "السبب", "لذلك", "وبالتالي"]
 
-    # أولاً: فصل الخيارات عن بقية النص
-    option_indices = []
+    # الخطوة 1: تحديد أسطر الخيارات
+    option_lines = []
     for i, line in enumerate(lines):
         stripped = line.strip()
         for pat in patterns:
             if re.match(pat, stripped):
                 options.append(stripped)
-                option_indices.append(i)
+                option_lines.append(i)
                 break
 
-    # البحث عن الإجابة الصحيحة في كل الأسطر
-    correct_line_index = -1
+    # الخطوة 2: البحث عن الإجابة الصحيحة
+    correct_line_idx = -1
     for i, line in enumerate(lines):
         if "الإجابة الصحيحة" in line or "✅" in line:
-            correct_line_index = i
-            # استخراج index الإجابة الصحيحة
-            match = re.search(r'[أ-هأ-ي]', line)
-            if match:
-                correct_index = ord(match.group()) - ord('أ')
+            correct_line_idx = i
+            # استخراج رقم الإجابة الصحيحة
+            match_arabic = re.search(r'[أ-هأ-ي]', line)
+            if match_arabic:
+                correct_index = ord(match_arabic.group()) - ord('أ')
             else:
-                match = re.search(r'\d+', line)
-                if match:
-                    correct_index = int(match.group()) - 1
+                match_num = re.search(r'\d+', line)
+                if match_num:
+                    correct_index = int(match_num.group()) - 1
             break
 
-    # الآن، نجمع نص السؤال (كل الأسطر ما عدا الخيارات وسطر الإجابة الصحيحة)
-    # ونبحث في الأسطر المتبقية عن شرح محتمل
-    remaining_lines = []
-    for i, line in enumerate(lines):
-        if i in option_indices or i == correct_line_index:
-            continue
+    # الخطوة 3: البحث عن شرح في الأسطر المتبقية
+    remaining_indices = [i for i in range(len(lines)) if i not in option_lines and i != correct_line_idx]
+    remaining_lines = [lines[i] for i in remaining_indices]
+
+    # البحث عن شرح باستخدام الكلمات المفتاحية
+    for i, line in zip(remaining_indices, remaining_lines):
         stripped = line.strip()
-        if stripped:
-            remaining_lines.append((i, stripped))
+        lower_line = stripped.lower()
+        if any(kw in lower_line for kw in explanation_keywords):
+            explanation = stripped
+            # إزالة هذا السطر من الأسطر المتبقية (لن يضاف لنص السؤال)
+            remaining_indices.remove(i)
+            break
 
-    # البحث عن شرح في الأسطر المتبقية
-    explanation_line_index = -1
-    if remaining_lines:
-        # استراتيجية 1: ابحث عن سطر يحتوي على كلمة مفتاحية من explanation_keywords
-        for idx, (line_idx, line) in enumerate(remaining_lines):
-            lower_line = line.lower()
-            if any(kw in lower_line for kw in explanation_keywords):
-                explanation = line
-                explanation_line_index = line_idx
-                break
-        
-        # استراتيجية 2: إذا لم نجد، اعتبر آخر سطر (الأطول) كشرح
-        if not explanation and remaining_lines:
-            # نأخذ أطول سطر متبقي (غالباً هو الشرح)
-            longest_line = max(remaining_lines, key=lambda x: len(x[1]))
-            explanation = longest_line[1]
-            explanation_line_index = longest_line[0]
+    # إذا لم نجد شرحاً، نأخذ أطول سطر متبقي كاحتمال
+    if not explanation and remaining_lines:
+        # أطول سطر
+        longest_idx = max(remaining_indices, key=lambda idx: len(lines[idx].strip()))
+        explanation = lines[longest_idx].strip()
+        remaining_indices.remove(longest_idx)
 
-    # الآن نبني نص السؤال من الأسطر التي لم تكن خيارات ولا شرح ولا إجابة صحيحة
-    for i, line in enumerate(lines):
-        if i in option_indices or i == correct_line_index or i == explanation_line_index:
-            continue
-        stripped = line.strip()
-        if stripped:
-            question_lines.append(line)
-
-    # إذا كان هناك أسطر متبقية ولم نستخدمها، نضيفها لنص السؤال (باستثناء الفارغة)
-    for i, line in enumerate(lines):
-        if i not in option_indices and i != correct_line_index and i != explanation_line_index:
-            stripped = line.strip()
-            if stripped:
-                question_lines.append(line)
+    # الخطوة 4: بناء نص السؤال من الأسطر المتبقية (بعد إزالة الخيارات والإجابة الصحيحة والشرح)
+    question_lines = [lines[i] for i in sorted(remaining_indices) if lines[i].strip()]
 
     question_text = "\n".join(question_lines).strip()
+
     return question_text, options, correct_index, explanation
 
 def priority_text(priority: str) -> str:
@@ -591,11 +577,11 @@ add_conv = ConversationHandler(
 
 # ==================== معالجات الكويز ====================
 async def _send_question(target, question: Question, context: ContextTypes.DEFAULT_TYPE):
-    """عرض السؤال مع أزرار الخيارات (مع استخراج الخيارات إذا لزم الأمر)"""
-    # دائماً نحاول استخراج النص النظيف من text، حتى لو كانت options موجودة
+    """عرض السؤال مع أزرار الخيارات، مع استخراج الخيارات والشرح من النص دائماً."""
+    # استخراج النص النظيف والخيارات من النص الأصلي
     q_text, extracted_options, _, _ = extract_options(question.text)
     
-    # استخدم الخيارات المستخرجة إذا وجدت، وإلا استخدم المخزنة
+    # استخدم الخيارات المستخرجة إذا وجدت، وإلا استخدم المخزنة (كحل احتياطي)
     if extracted_options:
         display_text = q_text
         display_options = extracted_options
@@ -603,23 +589,47 @@ async def _send_question(target, question: Question, context: ContextTypes.DEFAU
         display_text = question.text
         display_options = question.options
 
+    # إذا لم نجد خيارات حتى الآن، نعرض بدون أزرار
+    if not display_options:
+        text = (
+            f"🧠 *مراجعة*\n"
+            f"#{question.id} | {priority_text(question.priority)}{' 🤖' if question.auto_captured else ''}\n"
+            f"📊 سهولة: {question.ease_factor:.1f} | ❌ أخطاء: {question.wrong_count}\n\n"
+            f"{display_text}"
+        )
+        if hasattr(target, 'edit_message_text'):
+            await target.edit_message_text(text, parse_mode=ParseMode.MARKDOWN)
+        else:
+            await target.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+        return
+
+    # بناء الأزرار (نقوم بتوليد النص المختصر للزر بدون إضافة حرف جديد)
     tags_text = f" [{', '.join(question.tags)}]" if question.tags else ""
     auto_text = " 🤖" if question.auto_captured else ""
     keyboard = []
     labels = ['أ', 'ب', 'ج', 'د', 'هـ', 'و']
     for i, opt in enumerate(display_options[:4]):
-        btn_text = f"{labels[i]}) {opt[:40]}..." if len(opt) > 40 else f"{labels[i]}) {opt}"
+        # إزالة الحرف والفواصل من بداية الخيار للزر (اختياري، للتقليل من التكرار)
+        # نستخرج النص بعد أول مسافة أو بعد العلامة
+        opt_clean = re.sub(r'^[أ-هأ-يa-zA-Z0-9]\s*[\)\-.–—]\s*', '', opt)
+        if not opt_clean:
+            opt_clean = opt  # إذا فشل، نستخدم النص كاملاً
+        btn_text = f"{labels[i]}) {opt_clean[:40]}..." if len(opt_clean) > 40 else f"{labels[i]}) {opt_clean}"
         keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"opt_{question.id}_{i}")])
+    
     keyboard.append([
         InlineKeyboardButton("⏭ تخطي", callback_data=f"skip_{question.id}"),
         InlineKeyboardButton("⏹ إنهاء", callback_data="end_quiz")
     ])
+    
+    # نص السؤال (نظيف تماماً بدون خيارات)
     text = (
         f"🧠 *مراجعة*\n"
         f"#{question.id} | {priority_text(question.priority)}{tags_text}{auto_text}\n"
         f"📊 سهولة: {question.ease_factor:.1f} | ❌ أخطاء: {question.wrong_count}\n\n"
         f"{display_text}"
     )
+    
     if hasattr(target, 'edit_message_text'):
         await target.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
     else:
