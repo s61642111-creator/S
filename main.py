@@ -2,65 +2,68 @@
 # -*- coding: utf-8 -*-
 
 """
-Quiz Master Pro 2026 - الإصدار الموحد في ملف واحد
-جميع الميزات: SM-2، تحليلات، أزرار تفاعلية، Gamification، دعم الوسوم، تقارير يومية.
+Quiz Master Pro 2026 - النسخة الكاملة في ملف واحد
+تعمل مع python-telegram-bot v21.6 و SQLAlchemy
+جميع الحقوق محفوظة
 """
+
 import asyncio
 import logging
 import re
 import json
 import tempfile
 import os
-from datetime import datetime, timedelta, timezone
+import datetime
+from datetime import datetime as dt, timedelta, timezone
 from typing import List, Optional, Dict, Any
-from dataclasses import dataclass, field
-from enum import Enum
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, WebAppInfo
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
     ConversationHandler, ContextTypes, filters
 )
+from telegram.constants import ParseMode
+
+# SQLAlchemy
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, Text, select, func, or_
+from sqlalchemy.orm import declarative_base
 
 # ==================== الإعدادات ====================
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"  # ضع التوكن هنا
-ALLOWED_USER_ID = 1234567890        # ضع معرف تليجرام الخاص بك
-DATABASE_URL = "sqlite+aiosqlite:///quiz_data.db"  # مسار قاعدة البيانات
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"          # ضع التوكن هنا
+ALLOWED_USER_ID = 1234567890                # ضع معرف تليجرام الخاص بك
+DATABASE_URL = "sqlite+aiosqlite:///quiz_data.db"
 DAILY_REPORT_HOUR = 5
 DAILY_REPORT_MINUTE = 0
 
-# ==================== إعداد التسجيل ====================
+# إعداد التسجيل
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# ==================== قاعدة البيانات (SQLite + SQLAlchemy) ====================
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, Text, select, func, or_
-from sqlalchemy.orm import declarative_base
-
+# ==================== نماذج قاعدة البيانات ====================
 Base = declarative_base()
 
 class Question(Base):
     __tablename__ = "questions"
     id = Column(Integer, primary_key=True)
-    text = Column(Text)
+    text = Column(Text, nullable=False)
     options = Column(JSON, default=list)
-    correct_index = Column(Integer, default=-1)
+    correct_index = Column(Integer, default=-1)          # -1 يعني غير معروف
     explanation = Column(Text, nullable=True)
     tags = Column(JSON, default=list)
-    priority = Column(String(10), default="normal")
+    priority = Column(String(10), default="normal")      # urgent, normal, low
     ease_factor = Column(Float, default=2.5)
-    interval = Column(Integer, default=0)
+    interval = Column(Integer, default=0)                # الأيام حتى المراجعة القادمة
     next_review = Column(DateTime, nullable=True)
     total_reviews = Column(Integer, default=0)
     wrong_count = Column(Integer, default=0)
-    streak = Column(Integer, default=0)
+    streak = Column(Integer, default=0)                  # الإجابات الصحيحة المتتالية
     auto_captured = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    review_dates = Column(JSON, default=list)
+    created_at = Column(DateTime, default=lambda: dt.now(timezone.utc))
+    review_dates = Column(JSON, default=list)            # تواريخ المراجعات
 
     def to_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
@@ -114,9 +117,11 @@ class Database:
     async def get_stats() -> Dict[str, Any]:
         async with async_session() as session:
             total = await session.scalar(select(func.count(Question.id))) or 0
-            due = await session.scalar(select(func.count(Question.id)).where(
-                Question.next_review <= datetime.now(timezone.utc)
-            )) or 0
+            due = await session.scalar(
+                select(func.count(Question.id)).where(
+                    Question.next_review <= dt.now(timezone.utc)
+                )
+            ) or 0
             urgent = await session.scalar(select(func.count(Question.id)).where(Question.priority == "urgent")) or 0
             normal = await session.scalar(select(func.count(Question.id)).where(Question.priority == "normal")) or 0
             low = await session.scalar(select(func.count(Question.id)).where(Question.priority == "low")) or 0
@@ -173,7 +178,7 @@ db = Database()
 def calculate_streak(review_dates: List[str]) -> int:
     if not review_dates:
         return 0
-    dates = sorted(set(datetime.fromisoformat(d).date() for d in review_dates))
+    dates = sorted(set(dt.fromisoformat(d).date() for d in review_dates))
     max_streak = 1
     current = 1
     for i in range(1, len(dates)):
@@ -206,8 +211,14 @@ def get_level_info(total_reviews: int):
                 next_level_xp = levels[i+1][0]
             else:
                 next_level_xp = threshold + 100
-    xp_progress = xp - (levels[0][0] if level_name == "مبتدئ" else next(filter(lambda l: l[1]==level_name, levels))[0])
-    xp_needed = next_level_xp - (levels[0][0] if level_name == "مبتدئ" else next(filter(lambda l: l[1]==level_name, levels))[0])
+    # حساب التقدم
+    current_threshold = 0
+    for th, nm, _ in levels:
+        if nm == level_name:
+            current_threshold = th
+            break
+    xp_progress = xp - current_threshold
+    xp_needed = next_level_xp - current_threshold
     xp_percent = min(10, int((xp_progress / xp_needed) * 10)) if xp_needed else 10
     return {
         "level": level_name,
@@ -219,7 +230,7 @@ def get_level_info(total_reviews: int):
     }
 
 def get_next_question(questions: List[Question], mode: str = "all", tag: Optional[str] = None, exclude_id: Optional[int] = None) -> Optional[Question]:
-    now = datetime.now(timezone.utc)
+    now = dt.now(timezone.utc)
     if mode == "due":
         filtered = [q for q in questions if q.next_review and q.next_review <= now]
     elif mode == "weak":
@@ -242,7 +253,7 @@ def get_next_question(questions: List[Question], mode: str = "all", tag: Optiona
 def sm2_review(question: Question, quality: int) -> Question:
     if quality < 0 or quality > 5:
         raise ValueError("quality must be 0-5")
-    now = datetime.now(timezone.utc)
+    now = dt.now(timezone.utc)
     question.total_reviews += 1
     question.review_dates.append(now.isoformat())
     if quality >= 3:
@@ -375,9 +386,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📌 أرسل أي سؤال أو استخدم /help"
     )
     if update.message:
-        await update.message.reply_text(text, reply_markup=main_keyboard(), parse_mode="Markdown")
+        await update.message.reply_text(text, reply_markup=main_keyboard(), parse_mode=ParseMode.MARKDOWN)
     else:
-        await update.callback_query.edit_message_text(text, reply_markup=main_keyboard(), parse_mode="Markdown")
+        await update.callback_query.edit_message_text(text, reply_markup=main_keyboard(), parse_mode=ParseMode.MARKDOWN)
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
@@ -395,7 +406,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/list - آخر الأسئلة\n"
         "/ping - اختبار الاتصال"
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 
 async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
@@ -403,16 +414,16 @@ async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🏓 بونغ! البوت شغال 🚀")
 
 # ==================== إضافة يدوية (محادثة) ====================
-async def add_start(update: Update, context):
+async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
         "📝 *إضافة سؤال يدوي*\n\nأرسل نص السؤال (يمكن أن يتضمن خيارات بصيغة أ) ب) ...):",
-        parse_mode="Markdown"
+        parse_mode=ParseMode.MARKDOWN
     )
     return ADD_TEXT
 
-async def add_text(update: Update, context):
+async def add_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw = update.message.text
     cleaned = clean_text(raw)
     q_text, options, correct_idx = extract_options(cleaned)
@@ -429,7 +440,7 @@ async def add_text(update: Update, context):
     await update.message.reply_text("اختر مستوى الأهمية:", reply_markup=kb)
     return ADD_PRIO
 
-async def add_prio(update: Update, context):
+async def add_prio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     priority = query.data.replace("prio_", "")
@@ -437,7 +448,7 @@ async def add_prio(update: Update, context):
     await query.edit_message_text("🏷️ أرسل وسم المادة (مثال: قدرات) أو /skip للتخطي:")
     return ADD_TAGS
 
-async def add_tags(update: Update, context):
+async def add_tags(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     tags = [t.strip() for t in text.split(",")] if text and not text.startswith("/") else []
     q_data = context.user_data["question"]
@@ -451,12 +462,12 @@ async def add_tags(update: Update, context):
     qid = await db.add_question(q)
     await update.message.reply_text(
         f"✅ *تم الحفظ!* #️⃣{qid}\nوسوم: {', '.join(tags) if tags else 'بدون'}",
-        parse_mode="Markdown",
+        parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_keyboard()
     )
     return ConversationHandler.END
 
-async def add_skip(update: Update, context):
+async def add_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q_data = context.user_data["question"]
     q = Question(
         text=q_data["text"],
@@ -468,15 +479,16 @@ async def add_skip(update: Update, context):
     qid = await db.add_question(q)
     await update.message.reply_text(
         f"✅ *تم الحفظ!* #️⃣{qid} (بدون وسوم)",
-        parse_mode="Markdown",
+        parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_keyboard()
     )
     return ConversationHandler.END
 
-async def add_cancel(update: Update, context):
+async def add_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ تم الإلغاء.", reply_markup=main_keyboard())
     return ConversationHandler.END
 
+# تعريف ConversationHandler مع per_message=True
 add_conv = ConversationHandler(
     entry_points=[CallbackQueryHandler(add_start, pattern="^menu_add$")],
     states={
@@ -493,7 +505,7 @@ add_conv = ConversationHandler(
 )
 
 # ==================== معالجات الكويز ====================
-async def _send_question(target, question, context):
+async def _send_question(target, question: Question, context: ContextTypes.DEFAULT_TYPE):
     tags_text = f" [{', '.join(question.tags)}]" if question.tags else ""
     auto_text = " 🤖" if question.auto_captured else ""
     keyboard = []
@@ -512,9 +524,9 @@ async def _send_question(target, question, context):
         f"{question.text}"
     )
     if hasattr(target, 'edit_message_text'):
-        await target.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await target.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
     else:
-        await target.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await target.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
 async def _start_quiz(update, context, mode, tag=None):
     query = update.callback_query
@@ -574,7 +586,7 @@ async def quiz_option(update, context):
         [InlineKeyboardButton("🌟 Easy (5)", callback_data=f"rate_{qid}_5")],
         [InlineKeyboardButton("⏭ التالي", callback_data="next_question")]
     ])
-    await query.edit_message_text(result, reply_markup=rating_kb, parse_mode="Markdown")
+    await query.edit_message_text(result, reply_markup=rating_kb, parse_mode=ParseMode.MARKDOWN)
     context.user_data["last_question_id"] = qid
 
 async def quiz_rate(update, context):
@@ -626,12 +638,12 @@ async def menu_list(update, context):
     for q in last:
         short = q.text.replace("\n", " ")[:70] + ("..." if len(q.text) > 70 else "")
         lines.append(f"*#{q.id}*{'🤖' if q.auto_captured else ''} — {short}")
-    await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=main_keyboard())
+    await query.edit_message_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN, reply_markup=main_keyboard())
 
 async def menu_search(update, context):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("🔍 أرسل `/search كلمة`", parse_mode="Markdown", reply_markup=main_keyboard())
+    await query.edit_message_text("🔍 أرسل `/search كلمة`", parse_mode=ParseMode.MARKDOWN, reply_markup=main_keyboard())
 
 async def menu_stats(update, context):
     query = update.callback_query
@@ -649,7 +661,7 @@ async def menu_stats(update, context):
         f"📊 درجة متوقعة: *{pred['overall']}%* (ثقة {pred['confidence']})\n"
         f"🏷️ الوسوم: {', '.join(tags) if tags else 'لا يوجد'}"
     )
-    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
+    await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=main_keyboard())
 
 async def menu_level(update, context):
     query = update.callback_query
@@ -668,7 +680,7 @@ async def menu_level(update, context):
         f"🔁 إجمالي المراجعات: *{total}*\n"
         f"🔥 السلسلة الحالية: *{streak}* يوم"
     )
-    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
+    await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=main_keyboard())
 
 async def menu_export(update, context):
     query = update.callback_query
@@ -685,7 +697,7 @@ async def menu_export(update, context):
     with open(tmp, "rb") as f:
         await context.bot.send_document(
             chat_id=query.message.chat_id,
-            document=InputFile(f, filename=f"quiz_backup_{datetime.now(timezone.utc).strftime('%Y%m%d')}.json"),
+            document=InputFile(f, filename=f"quiz_backup_{dt.now(timezone.utc).strftime('%Y%m%d')}.json"),
             caption="📦 نسخة احتياطية"
         )
     os.unlink(tmp)
@@ -698,7 +710,7 @@ async def menu_clear(update, context):
         [InlineKeyboardButton("🗑️ نعم، امسح", callback_data="clear_yes")],
         [InlineKeyboardButton("❌ إلغاء", callback_data="clear_no")]
     ])
-    await query.edit_message_text("⚠️ *هل تريد مسح جميع الأسئلة؟*", parse_mode="Markdown", reply_markup=kb)
+    await query.edit_message_text("⚠️ *هل تريد مسح جميع الأسئلة؟*", parse_mode=ParseMode.MARKDOWN, reply_markup=kb)
 
 async def clear_decision(update, context):
     query = update.callback_query
@@ -741,7 +753,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_error:
         reply += "\n🏷️ وسم: weak"
     reply += f"\n💡 `/tag {qid} قدرات`"
-    await msg.reply_text(reply, parse_mode="Markdown")
+    await msg.reply_text(reply, parse_mode=ParseMode.MARKDOWN)
 
 async def handle_poll(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
@@ -775,7 +787,7 @@ async def handle_poll(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_error:
         reply += "\n🏷️ وسم: weak"
     reply += f"\n💡 `/tag {qid} قدرات`"
-    await msg.reply_text(reply, parse_mode="Markdown")
+    await msg.reply_text(reply, parse_mode=ParseMode.MARKDOWN)
 
 # ==================== أوامر إضافية ====================
 async def wrong_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -800,13 +812,13 @@ async def wrong_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         auto_captured=True
     )
     qid = await db.add_question(q)
-    await update.message.reply_text(f"✅ *تم حفظ السؤال كـ \"ضعيف\"!*\n🆔 #{qid}", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ *تم حفظ السؤال كـ \"ضعيف\"!*\n🆔 #{qid}", parse_mode=ParseMode.MARKDOWN)
 
 async def search_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
         return
     if not context.args:
-        await update.message.reply_text("اكتب: `/search كلمة`", parse_mode="Markdown")
+        await update.message.reply_text("اكتب: `/search كلمة`", parse_mode=ParseMode.MARKDOWN)
         return
     term = " ".join(context.args)
     results = await db.search(term)
@@ -817,13 +829,13 @@ async def search_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for q in results[:15]:
         short = q.text.replace("\n", " ")[:70] + ("..." if len(q.text) > 70 else "")
         lines.append(f"*#{q.id}* — {short}")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 async def delete_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
         return
     if not context.args:
-        await update.message.reply_text("اكتب: `/delete رقم`", parse_mode="Markdown")
+        await update.message.reply_text("اكتب: `/delete رقم`", parse_mode=ParseMode.MARKDOWN)
         return
     try:
         qid = int(context.args[0])
@@ -837,7 +849,7 @@ async def tag_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
         return
     if len(context.args) < 2:
-        await update.message.reply_text("اكتب: `/tag رقم وسم`", parse_mode="Markdown")
+        await update.message.reply_text("اكتب: `/tag رقم وسم`", parse_mode=ParseMode.MARKDOWN)
         return
     try:
         qid = int(context.args[0])
@@ -852,7 +864,7 @@ async def tag_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if tag not in q.tags:
         q.tags.append(tag)
         await db.update_question(q)
-    await update.message.reply_text(f"🏷️ تمت إضافة الوسم *{tag}* للسؤال #{qid}.", parse_mode="Markdown")
+    await update.message.reply_text(f"🏷️ تمت إضافة الوسم *{tag}* للسؤال #{qid}.", parse_mode=ParseMode.MARKDOWN)
 
 async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
@@ -866,7 +878,7 @@ async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for q in last:
         short = q.text.replace("\n", " ")[:70] + ("..." if len(q.text) > 70 else "")
         lines.append(f"*#{q.id}*{'🤖' if q.auto_captured else ''} — {short}")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 async def weak_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
@@ -879,7 +891,7 @@ async def weak_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for q in weak:
         short = q.text.replace("\n", " ")[:60] + ("..." if len(q.text) > 60 else "")
         lines.append(f"*#{q.id}* ease:{q.ease_factor:.1f} | خطأ:{q.wrong_count}x\n  {short}")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 async def today_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
@@ -901,7 +913,7 @@ async def today_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🤘 الصائد: *{stats['auto_captured']}*\n\n"
         f"📊 *درجتك المتوقعة: {pred['overall']}%* (ثقة {pred['confidence']})"
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 
 # ==================== المهام المجدولة ====================
 async def daily_report_job(context: ContextTypes.DEFAULT_TYPE):
@@ -923,7 +935,7 @@ async def daily_report_job(context: ContextTypes.DEFAULT_TYPE):
         f"{'💪 حان وقت المراجعة!' if stats['due'] > 0 else '✅ كل شيء على ما يرام!'}"
     )
     try:
-        await context.bot.send_message(chat_id=ALLOWED_USER_ID, text=text, parse_mode="Markdown", reply_markup=main_keyboard())
+        await context.bot.send_message(chat_id=ALLOWED_USER_ID, text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=main_keyboard())
     except Exception as e:
         logger.error(f"فشل التقرير اليومي: {e}")
 
@@ -931,9 +943,9 @@ async def daily_report_job(context: ContextTypes.DEFAULT_TYPE):
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error("استثناء:", exc_info=context.error)
     if update and hasattr(update, "effective_chat") and update.effective_chat:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ حدث خطأ 
-        
-        # ==================== الإعداد والتشغيل ====================
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ حدث خطأ داخلي.")
+
+# ==================== الإعداد والتشغيل ====================
 async def post_init(app):
     app.bot_data["allowed_user_id"] = ALLOWED_USER_ID
     if app.job_queue:
@@ -955,7 +967,7 @@ async def main():
     # بناء التطبيق
     app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).post_shutdown(shutdown).build()
     
-    # إضافة المعالجات (handlers) - نفس الكود السابق ولكن نضعه هنا
+    # إضافة المعالجات (handlers)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
@@ -968,7 +980,7 @@ async def main():
     app.add_handler(CommandHandler("today", today_cmd))
     
     # محادثة الإضافة
-    app.add_handler(add_conv)  # تأكد من تعريف add_conv قبل main()
+    app.add_handler(add_conv)
     
     # معالجات القوائم
     app.add_handler(CallbackQueryHandler(menu_list, pattern="^menu_list$"))
