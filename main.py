@@ -1,4 +1,6 @@
 import logging, json, os, re, asyncio
+import nest_asyncio
+nest_asyncio.apply()
 from datetime import datetime, timedelta, timezone
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
