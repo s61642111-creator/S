@@ -417,8 +417,8 @@ async def _send_quiz(q, x: Question):
     
     keyboard.append([InlineKeyboardButton("⏭ تخطي", callback_data="quiz_skip")])
     
-await q.edit_message_text(
-    f"🧠 *مراجعة #{x.id}*{tags_s}{auto_s}\\n"
+    await q.edit_message_text(
+    f"🧠 *مراجعة*\n#{x.id} | {prio_txt(x.priority)}{tags_s}{auto_s}\n"
     f"🔥 {prio_txt(x.priority)}\\n"
     f"📊 ease:{x.ease_factor:.1f} | خطأ:{x.wrong_count}\\n\\n"
     f"{x.text}",
