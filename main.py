@@ -1,4 +1,6 @@
 import logging, json, os, re, asyncio
+async def is_auth(u: Update): return True
+async def reject(u: Update): pass
 import nest_asyncio
 nest_asyncio.apply()
 from datetime import datetime, timedelta, timezone
@@ -176,7 +178,6 @@ async def menu_add(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     return ADD_TEXT
 
 async def add_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not is_auth(u): await reject(u); return ConversationHandler.END
     ctx.user_data["q_text"] = u.message.text
     await u.message.reply_text("اختر مستوى الأهمية:", reply_markup=InlineKeyboardMarkup([
         [InlineKeyboardButton("🔥 عاجل",  callback_data="prio_urgent")],
@@ -186,7 +187,6 @@ async def add_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     return ADD_PRIO
 
 async def add_prio(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not is_auth(u): await reject(u); return ConversationHandler.END
     await u.callback_query.answer()
     ctx.user_data["q_prio"] = u.callback_query.data.replace("prio_","")
     await u.callback_query.edit_message_text(
@@ -196,7 +196,7 @@ async def add_prio(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     return ADD_TAGS
 
 async def add_tags(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not is_auth(u): await reject(u); return ConversationHandler.END
+
     raw = u.message.text.strip()
     tags = [raw] if raw and not raw.startswith("/") else []
     q = Question(id=0, text=ctx.user_data.get("q_text",""),
@@ -210,7 +210,7 @@ async def add_tags(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ── أوامر ─────────────────────────────────────────────────────────
 async def tag_cmd(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not is_auth(u): await reject(u); return
+    
     if not ctx.args or len(ctx.args) < 2:
         await u.message.reply_text("اكتب: `/tag رقم وسم`", parse_mode="Markdown"); return
     try: qid = int(ctx.args[0])
@@ -223,7 +223,7 @@ async def tag_cmd(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def search_cmd(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not is_auth(u): await reject(u); return
-    if not ctx.args: await u.message.reply_text("اكتب: `/search كلمة`", parse_mode="Markdown"); return
+
     term = " ".join(ctx.args)
     res  = await db.search(term)
     if not res: await u.message.reply_text("❌ لا نتائج."); return
