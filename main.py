@@ -34,11 +34,11 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, 
 from sqlalchemy.orm import declarative_base
 
 # ==================== إعدادات البيئة ====================
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+BOT_TOKEN = os.environ.get("8242666905:AAHljuGOMBxWmYMsjPzAK0zDL7_tAqEYqeg")
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN غير موجود في متغيرات البيئة")
 
-ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "0"))
+ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "6782657661"))
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///quiz_data.db")
 DAILY_REPORT_HOUR = int(os.environ.get("DAILY_REPORT_HOUR", "5"))
 DAILY_REPORT_MINUTE = int(os.environ.get("DAILY_REPORT_MINUTE", "0"))
@@ -1065,13 +1065,17 @@ async def post_init(app: Application):
     logger.info("✅ البوت جاهز للعمل!")
 
 def main():
-    # تهيئة قاعدة البيانات بشكل متزامن (مرة واحدة)
-    asyncio.run(init_db())
+    # إنشاء حلقة أحداث جديدة وتعيينها
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    # تهيئة قاعدة البيانات داخل الحلقة
+    loop.run_until_complete(init_db())
     
     # بناء التطبيق
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     
-    # إضافة جميع المعالجات (handlers) - كما هي
+    # إضافة جميع المعالجات (كما كانت)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
@@ -1107,7 +1111,7 @@ def main():
     app.add_error_handler(error_handler)
     
     logger.info("🚀 تشغيل البوت...")
-    # run_polling يدير حلقة الأحداث بنفسه (لا حاجة لـ await)
+    # تشغيل البوت (سيستخدم الحلقة التي أنشأناها)
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
