@@ -1052,6 +1052,18 @@ async def post_init(app: Application):
         )
     logger.info("✅ البوت جاهز للعمل!")
 
+# ==================== الإعداد والتشغيل النهائي ====================
+async def post_init(app: Application):
+    """تنفيذ بعد تهيئة التطبيق"""
+    app.bot_data["allowed_user_id"] = ALLOWED_USER_ID
+    if app.job_queue:
+        app.job_queue.run_daily(
+            daily_report_job,
+            time=datetime.time(hour=DAILY_REPORT_HOUR, minute=DAILY_REPORT_MINUTE),
+            name="daily_report"
+        )
+    logger.info("✅ البوت جاهز للعمل!")
+
 async def main():
     # تهيئة قاعدة البيانات
     await init_db()
@@ -1059,7 +1071,7 @@ async def main():
     # بناء التطبيق
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     
-    # إضافة جميع المعالجات (نفس الكود السابق)
+    # إضافة جميع المعالجات (handlers) - كما كانت سابقاً
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
@@ -1095,7 +1107,11 @@ async def main():
     app.add_error_handler(error_handler)
     
     logger.info("🚀 تشغيل البوت...")
+    # استخدام run_polling مباشرة - هو من سيدير حلقة الأحداث
     await app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("🛑 تم إيقاف البوت.")
