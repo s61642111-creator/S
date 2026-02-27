@@ -6,3 +6,4 @@ aiosqlite==0.20.0
 pydantic==2.7.4
 aiofiles==23.2.1
 nest_asyncio==1.6.0
+sqlalchemy>=2.0
