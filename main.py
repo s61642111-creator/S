@@ -945,7 +945,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     if update and hasattr(update, "effective_chat") and update.effective_chat:
         await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ حدث خطأ داخلي.")
 
-# ==================== الإعداد والتشغيل ====================
+# ==================== الإعداد والتشغيل ====================# ==================== الإعداد والتشغيل ====================
 async def post_init(app):
     app.bot_data["allowed_user_id"] = ALLOWED_USER_ID
     if app.job_queue:
@@ -960,14 +960,14 @@ async def shutdown(app):
     await engine.dispose()
     logger.info("🛑 تم إغلاق قاعدة البيانات.")
 
-async def main():
-    # تهيئة قاعدة البيانات
-    await init_db()
+def main():
+    # تهيئة قاعدة البيانات بشكل متزامن
+    asyncio.run(init_db())
     
     # بناء التطبيق
     app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).post_shutdown(shutdown).build()
     
-    # إضافة المعالجات (handlers)
+    # إضافة المعالجات (handlers) - هنا كل المعالجات كما هي
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
@@ -1012,7 +1012,7 @@ async def main():
     app.add_error_handler(error_handler)
     
     logger.info("🚀 تشغيل البوت...")
-    await app.run_polling(drop_pending_updates=True)
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
