@@ -1,18 +1,15 @@
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, WebAppInfo
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, ContextTypes, filters
+
+async def is_auth(u): return True
+async def reject(u): pass
+
 import logging, json, os, re, asyncio
-async def is_auth(u: Update): return True
-async def reject(u: Update): pass
 import nest_asyncio
 nest_asyncio.apply()
 from datetime import datetime, timedelta, timezone
-from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup,
-    InputFile, WebAppInfo,
-)
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler,
-    CallbackQueryHandler, ConversationHandler, ContextTypes, filters,
-)
 from config.settings import settings
+
 from core.database import db
 from core.models import Question
 from core.quiz_engine import engine, get_next_question, get_level_info, calculate_streak
