@@ -30,11 +30,6 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, 
 from sqlalchemy.orm import declarative_base
 
 # ==================== الإعدادات ====================
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"          # ضع التوكن هنا
-ALLOWED_USER_ID = 1234567890                # ضع معرف تليجرام الخاص بك
-DATABASE_URL = "sqlite+aiosqlite:///quiz_data.db"
-DAILY_REPORT_HOUR = 5
-DAILY_REPORT_MINUTE = 0
 
 # إعداد التسجيل
 logging.basicConfig(
