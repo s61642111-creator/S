@@ -31,7 +31,7 @@ from sqlalchemy.orm import declarative_base
 
 # ==================== الإعدادات ====================
 BOT_TOKEN = "8242666905:AAHljuGOMBxWmYMsjPzAK0zDL7_tAqEYqeg"   # ضع التوكن الحقيقي من BotFather
-ALLOWED_USER_ID = 8150720268                            # ضع معرفك الرقمي (تحصل عليه من @userinfobot)
+ALLOWED_USER_ID = 6782657661                            # ضع معرفك الرقمي (تحصل عليه من @userinfobot)
 DATABASE_URL = "sqlite+aiosqlite:///quiz_data.db"      # مسار قاعدة البيانات (
 DAILY_REPORT_HOUR = 5
 DAILY_REPORT_MINUTE = 0
