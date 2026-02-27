@@ -1052,14 +1052,14 @@ async def post_init(app: Application):
         )
     logger.info("✅ البوت جاهز للعمل!")
 
-def main():
+async def main():
     # تهيئة قاعدة البيانات
-    asyncio.run(init_db())
+    await init_db()
     
     # بناء التطبيق
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     
-    # تسجيل المعالجات
+    # إضافة جميع المعالجات (نفس الكود السابق)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
@@ -1070,11 +1070,7 @@ def main():
     app.add_handler(CommandHandler("list", list_cmd))
     app.add_handler(CommandHandler("weak", weak_cmd))
     app.add_handler(CommandHandler("today", today_cmd))
-    
-    # محادثة الإضافة
     app.add_handler(add_conv)
-    
-    # معالجات القوائم
     app.add_handler(CallbackQueryHandler(menu_list, pattern="^menu_list$"))
     app.add_handler(CallbackQueryHandler(menu_search, pattern="^menu_search$"))
     app.add_handler(CallbackQueryHandler(menu_stats, pattern="^menu_stats$"))
@@ -1083,8 +1079,6 @@ def main():
     app.add_handler(CallbackQueryHandler(menu_clear, pattern="^menu_clear$"))
     app.add_handler(CallbackQueryHandler(clear_decision, pattern="^clear_(yes|no)$"))
     app.add_handler(CallbackQueryHandler(menu_back, pattern="^menu_back$"))
-    
-    # معالجات الكويز
     app.add_handler(CallbackQueryHandler(menu_quiz_all, pattern="^menu_quiz_all$"))
     app.add_handler(CallbackQueryHandler(menu_quiz_due, pattern="^menu_quiz_due$"))
     app.add_handler(CallbackQueryHandler(menu_quiz_weak, pattern="^menu_quiz_weak$"))
@@ -1096,16 +1090,12 @@ def main():
     app.add_handler(CallbackQueryHandler(quiz_skip, pattern="^skip_"))
     app.add_handler(CallbackQueryHandler(next_question, pattern="^next_question$"))
     app.add_handler(CallbackQueryHandler(quiz_end, pattern="^end_quiz$"))
-    
-    # معالجات الرسائل
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.POLL, handle_poll))
-    
-    # معالج الأخطاء
     app.add_error_handler(error_handler)
     
     logger.info("🚀 تشغيل البوت...")
-    app.run_polling(drop_pending_updates=True)
+    await app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
