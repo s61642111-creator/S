@@ -623,7 +623,7 @@ async def _send_question(target, question: Question, context: ContextTypes.DEFAU
     if hasattr(target, 'edit_message_text'):
         await target.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
     else:
-    await target.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+        await target.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
 async def _start_quiz(update, context, mode, tag=None):
     query = update.callback_query
