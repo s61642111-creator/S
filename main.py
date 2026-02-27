@@ -944,7 +944,10 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     if update and hasattr(update, "effective_chat") and update.effective_chat:
         await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ حدث خطأ داخلي.")
 
-# ==================== الإعداد والتشغيل ====================# ==================== الإعداد والتشغيل المبسط ====================
+# ==================== الإعداد والتشغيل النهائي (بدون مشاكل حلقة الأحداث) ====================
+import nest_asyncio
+nest_asyncio.apply()  # يسمح بتداخل الحلقات (آمن)
+
 async def post_init(app):
     app.bot_data["allowed_user_id"] = ALLOWED_USER_ID
     if app.job_queue:
@@ -955,16 +958,14 @@ async def post_init(app):
         )
     logger.info("✅ البوت جاهز للعمل!")
 
-# لا حاجة لدالة shutdown هنا، سنعتمد على الإغلاق التلقائي
-
-def main():
-    # تهيئة قاعدة البيانات بشكل منفصل (مرة واحدة)
-    asyncio.run(init_db())
+async def main():
+    # تهيئة قاعدة البيانات
+    await init_db()
     
-    # بناء التطبيق بدون post_shutdown
+    # بناء التطبيق (بدون post_shutdown لتجنب التعقيدات)
     app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
     
-    # إضافة جميع المعالجات (كما هي)
+    # إضافة جميع المعالجات (نفس الكود السابق)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
@@ -1009,8 +1010,7 @@ def main():
     app.add_error_handler(error_handler)
     
     logger.info("🚀 تشغيل البوت...")
-    # run_polling يدير الحلقة بنفسه، لا حاجة لـ asyncio.run هنا
-    app.run_polling(drop_pending_updates=True)
+    await app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
