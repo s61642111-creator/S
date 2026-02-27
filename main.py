@@ -417,17 +417,21 @@ async def _send_quiz(q, x: Question):
     
     keyboard.append([InlineKeyboardButton("⏭ تخطي", callback_data="quiz_skip")])
     
-    await q.edit_message_text(
-        f"🧠 *مراجعة #{x.id}*{tags_s}{auto_s}\\n"
-        f"🔥 {prio_txt(x.priority)}\\n"
-        f"📊 ease:{x.ease_factor:.1f} | خطأ:{x.wrong_count}\\n\\n"
-        f"{x.text}",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown")
+await q.edit_message_text(
+    f"🧠 *مراجعة #{x.id}*{tags_s}{auto_s}\\n"
+    f"🔥 {prio_txt(x.priority)}\\n"
+    f"📊 ease:{x.ease_factor:.1f} | خطأ:{x.wrong_count}\\n\\n"
+    f"{x.text}",
+    reply_markup=InlineKeyboardMarkup(keyboard),
+    parse_mode="Markdown"
+)
 
 async def quiz_handler(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = u.callback_query; await q.answer()
-    data = q.data
+    """معالج أزرار الكويز"""
+    q = u.callback_query
+    await q.answer()
+    data
+ = q.data
     if data == "quiz_end":
     ctx.user_data.pop("quiz_id",None); ctx.user_data.pop("quiz_mode",None)
     ctx.user_data.pop("quiz_tag",None)
