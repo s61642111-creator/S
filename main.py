@@ -2,9 +2,12 @@
 # -*- coding: utf-8 -*-
 
 """
-Quiz Master Pro 2026 - النسخة الكاملة في ملف واحد
-تعمل مع python-telegram-bot v21.6 و SQLAlchemy
-جميع الحقوق محفوظة
+Quiz Master Pro 2026 - النسخة النهائية المطورة
+- استخراج الشرح التلقائي
+- زر شرح عند الإجابة الخاطئة
+- استخدام متغيرات البيئة
+- معالجة محسنة للأخطاء
+- هيكل منظم
 """
 
 import asyncio
@@ -19,22 +22,27 @@ from typing import List, Optional, Dict, Any
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, WebAppInfo
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ConversationHandler, ContextTypes, filters
 )
 from telegram.constants import ParseMode
+from telegram.error import TelegramError
 
 # SQLAlchemy
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, Text, select, func, or_
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, Text, select, func, or_, Index
 from sqlalchemy.orm import declarative_base
 
-# ==================== الإعدادات ====================
-BOT_TOKEN = "8242666905:AAHljuGOMBxWmYMsjPzAK0zDL7_tAqEYqeg"   # ضع التوكن الحقيقي من BotFather
-ALLOWED_USER_ID = 6782657661                            # ضع معرفك الرقمي (تحصل عليه من @userinfobot)
-DATABASE_URL = "sqlite+aiosqlite:///quiz_data.db"      # مسار قاعدة البيانات (
-DAILY_REPORT_HOUR = 5
-DAILY_REPORT_MINUTE = 0
+# ==================== إعدادات البيئة ====================
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN غير موجود في متغيرات البيئة")
+
+ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "0"))
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///quiz_data.db")
+DAILY_REPORT_HOUR = int(os.environ.get("DAILY_REPORT_HOUR", "5"))
+DAILY_REPORT_MINUTE = int(os.environ.get("DAILY_REPORT_MINUTE", "0"))
+
 # إعداد التسجيل
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -47,27 +55,32 @@ Base = declarative_base()
 
 class Question(Base):
     __tablename__ = "questions"
+    __table_args__ = (
+        Index('ix_next_review', 'next_review'),
+        Index('ix_priority', 'priority'),
+    )
+
     id = Column(Integer, primary_key=True)
     text = Column(Text, nullable=False)
     options = Column(JSON, default=list)
-    correct_index = Column(Integer, default=-1)          # -1 يعني غير معروف
+    correct_index = Column(Integer, default=-1)
     explanation = Column(Text, nullable=True)
     tags = Column(JSON, default=list)
-    priority = Column(String(10), default="normal")      # urgent, normal, low
+    priority = Column(String(10), default="normal")
     ease_factor = Column(Float, default=2.5)
-    interval = Column(Integer, default=0)                # الأيام حتى المراجعة القادمة
+    interval = Column(Integer, default=0)
     next_review = Column(DateTime, nullable=True)
     total_reviews = Column(Integer, default=0)
     wrong_count = Column(Integer, default=0)
-    streak = Column(Integer, default=0)                  # الإجابات الصحيحة المتتالية
+    streak = Column(Integer, default=0)
     auto_captured = Column(Boolean, default=False)
     created_at = Column(DateTime, default=lambda: dt.now(timezone.utc))
-    review_dates = Column(JSON, default=list)            # تواريخ المراجعات
+    review_dates = Column(JSON, default=list)
 
     def to_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
-# إنشاء المحرك والجلسة
+# ==================== تهيئة قاعدة البيانات ====================
 engine = create_async_engine(DATABASE_URL, echo=False)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -75,7 +88,7 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-# ==================== دوال قاعدة البيانات ====================
+# ==================== طبقة الوصول إلى البيانات (Repository) ====================
 class Database:
     @staticmethod
     async def add_question(question: Question) -> int:
@@ -173,7 +186,90 @@ class Database:
 
 db = Database()
 
-# ==================== خوارزمية SM-2 والتحليلات ====================
+# ==================== دوال مساعدة ====================
+def clean_text(raw: str) -> str:
+    """إزالة المؤقتات والأرقام الزائدة من النص"""
+    lines = raw.splitlines()
+    cleaned = []
+    for line in lines:
+        s = line.strip()
+        if not s:
+            cleaned.append(line)
+            continue
+        if any(ch in s for ch in ["⏳", "⌛", "⏱", "⏰"]):
+            continue
+        low = s.lower()
+        if any(kw in low for kw in ["ثانية", "ثوان", "الوقت المتبقي", "time left", "sec"]):
+            if len(s) <= 30:
+                continue
+        if re.fullmatch(r"[0-9]{1,2}[:\.][0-9]{1,2}", s):
+            continue
+        cleaned.append(line)
+    return "\n".join(cleaned)
+
+def extract_options(text: str):
+    """
+    استخراج الخيارات والشرح من النص.
+    تُرجع (نص السؤال, قائمة الخيارات, index الإجابة الصحيحة, نص الشرح)
+    """
+    lines = text.splitlines()
+    question_lines = []
+    options = []
+    explanation = None
+    correct_index = -1
+
+    # أنماط الخيارات
+    patterns = [r'^[أ-هأ-ي]\s*[\)\-.]+', r'^[a-zA-Z]\)', r'^\d+\)']
+    # كلمات مفتاحية للشرح
+    explain_keywords = ["ملاحظة:", "شرح:", "Explanation:", "الشرح:", "ملحوظة:"]
+
+    # البحث عن سطر الشرح أولاً
+    explain_line_idx = -1
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        for kw in explain_keywords:
+            if stripped.startswith(kw):
+                explanation = stripped[len(kw):].strip()
+                explain_line_idx = i
+                break
+        if explanation:
+            break
+
+    # جمع الخيارات والأسطر العادية
+    for i, line in enumerate(lines):
+        if i == explain_line_idx:
+            continue
+        stripped = line.strip()
+        is_option = False
+        for pat in patterns:
+            if re.match(pat, stripped):
+                options.append(stripped)
+                is_option = True
+                break
+        if not is_option:
+            question_lines.append(line)
+
+    # البحث عن الإجابة الصحيحة (إن وجدت)
+    for line in lines:
+        if "الإجابة الصحيحة" in line or "✅" in line:
+            # البحث عن حرف (أ، ب، ج، د)
+            match = re.search(r'[أ-هأ-ي]', line)
+            if match:
+                correct_index = ord(match.group()) - ord('أ')
+            else:
+                # أو رقم
+                match = re.search(r'\d+', line)
+                if match:
+                    correct_index = int(match.group()) - 1
+            break
+
+    question_text = "\n".join(question_lines).strip()
+    return question_text, options, correct_index, explanation
+
+def priority_text(priority: str) -> str:
+    return {"urgent": "🔥 عاجل", "normal": "⚡ متوسط", "low": "📖 عادي"}.get(priority, priority)
+
+# ==================== خوارزمية SM-2 والإحصائيات ====================
 def calculate_streak(review_dates: List[str]) -> int:
     if not review_dates:
         return 0
@@ -210,7 +306,6 @@ def get_level_info(total_reviews: int):
                 next_level_xp = levels[i+1][0]
             else:
                 next_level_xp = threshold + 100
-    # حساب التقدم
     current_threshold = 0
     for th, nm, _ in levels:
         if nm == level_name:
@@ -242,14 +337,17 @@ def get_next_question(questions: List[Question], mode: str = "all", tag: Optiona
         filtered = [q for q in filtered if q.id != exclude_id]
     if not filtered:
         return None
+
     def sort_key(q):
         due_score = 0 if q.next_review and q.next_review <= now else 1
         weak_score = - (q.wrong_count / max(q.total_reviews, 1))
         return (due_score, weak_score, -q.id)
+
     filtered.sort(key=sort_key)
     return filtered[0]
 
 def sm2_review(question: Question, quality: int) -> Question:
+    """تطبيق خوارزمية SM-2 على السؤال."""
     if quality < 0 or quality > 5:
         raise ValueError("quality must be 0-5")
     now = dt.now(timezone.utc)
@@ -261,7 +359,9 @@ def sm2_review(question: Question, quality: int) -> Question:
         question.streak = 0
     if quality < 3:
         question.wrong_count += 1
+
     if quality >= 3:
+        # تحديث ease factor
         new_ef = question.ease_factor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
         question.ease_factor = max(1.3, min(2.5, new_ef))
         if question.interval == 0:
@@ -294,56 +394,7 @@ def predict_score(questions: List[Question]) -> Dict[str, Any]:
         conf = "مرتفع"
     return {"overall": round(predicted, 1), "confidence": conf}
 
-# ==================== دوال مساعدة ====================
-def clean_text(raw: str) -> str:
-    lines = raw.splitlines()
-    cleaned = []
-    for line in lines:
-        s = line.strip()
-        if not s:
-            cleaned.append(line)
-            continue
-        if any(ch in s for ch in ["⏳", "⌛", "⏱", "⏰"]):
-            continue
-        low = s.lower()
-        if any(kw in low for kw in ["ثانية", "ثوان", "الوقت المتبقي", "time left", "sec"]):
-            if len(s) <= 30:
-                continue
-        if re.fullmatch(r"[0-9]{1,2}[:\.][0-9]{1,2}", s):
-            continue
-        cleaned.append(line)
-    return "\n".join(cleaned)
-
-def extract_options(text: str):
-    lines = text.splitlines()
-    question_lines = []
-    options = []
-    correct_index = -1
-    patterns = [r'^[أ-هأ-ي]\s*[\)\-.]+', r'^[a-zA-Z]\)', r'^\d+\)']
-    for line in lines:
-        stripped = line.strip()
-        is_opt = False
-        for pat in patterns:
-            if re.match(pat, stripped):
-                options.append(stripped)
-                is_opt = True
-                break
-        if not is_opt:
-            question_lines.append(line)
-    for line in lines:
-        if "الإجابة الصحيحة" in line or "✅" in line:
-            match = re.search(r'[أ-هأ-ي]', line)
-            if match:
-                correct_index = ord(match.group()) - ord('أ')
-            else:
-                match = re.search(r'\d+', line)
-                if match:
-                    correct_index = int(match.group()) - 1
-    return "\n".join(question_lines), options, correct_index
-
-def priority_text(p: str) -> str:
-    return {"urgent": "🔥 عاجل", "normal": "⚡ متوسط", "low": "📖 عادي"}.get(p, p)
-
+# ==================== لوحات المفاتيح ====================
 def main_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 إضافة سؤال يدوي", callback_data="menu_add")],
@@ -363,8 +414,7 @@ def main_keyboard():
 # ==================== حالات المحادثة ====================
 ADD_TEXT, ADD_PRIO, ADD_TAGS = range(3)
 
-# ==================== المعالجات (Handlers) ====================
-
+# ==================== معالج الأوامر الأساسية ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
         await update.message.reply_text("⛔ غير مصرح.")
@@ -412,7 +462,7 @@ async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text("🏓 بونغ! البوت شغال 🚀")
 
-# ==================== إضافة يدوية (محادثة) ====================
+# ==================== إضافة سؤال يدوي (محادثة) ====================
 async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -425,11 +475,12 @@ async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw = update.message.text
     cleaned = clean_text(raw)
-    q_text, options, correct_idx = extract_options(cleaned)
+    q_text, options, correct_idx, explanation = extract_options(cleaned)
     context.user_data["question"] = {
         "text": q_text,
         "options": options,
-        "correct_index": correct_idx
+        "correct_index": correct_idx,
+        "explanation": explanation
     }
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔥 عاجل", callback_data="prio_urgent")],
@@ -455,6 +506,7 @@ async def add_tags(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text=q_data["text"],
         options=q_data.get("options", []),
         correct_index=q_data.get("correct_index", -1),
+        explanation=q_data.get("explanation", ""),
         priority=q_data.get("priority", "normal"),
         tags=tags
     )
@@ -472,6 +524,7 @@ async def add_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text=q_data["text"],
         options=q_data.get("options", []),
         correct_index=q_data.get("correct_index", -1),
+        explanation=q_data.get("explanation", ""),
         priority=q_data.get("priority", "normal"),
         tags=[]
     )
@@ -487,7 +540,6 @@ async def add_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ تم الإلغاء.", reply_markup=main_keyboard())
     return ConversationHandler.END
 
-# تعريف ConversationHandler مع per_message=True
 add_conv = ConversationHandler(
     entry_points=[CallbackQueryHandler(add_start, pattern="^menu_add$")],
     states={
@@ -504,11 +556,22 @@ add_conv = ConversationHandler(
 
 # ==================== معالجات الكويز ====================
 async def _send_question(target, question: Question, context: ContextTypes.DEFAULT_TYPE):
+    """عرض السؤال مع أزرار الخيارات (مع استخراج الخيارات إذا لزم الأمر)"""
+    display_text = question.text
+    display_options = question.options if question.options else []
+
+    if not display_options:
+        # محاولة استخراج الخيارات من النص
+        q_text, options, _, _ = extract_options(question.text)
+        if options:
+            display_text = q_text
+            display_options = options
+
     tags_text = f" [{', '.join(question.tags)}]" if question.tags else ""
     auto_text = " 🤖" if question.auto_captured else ""
     keyboard = []
     labels = ['أ', 'ب', 'ج', 'د', 'هـ', 'و']
-    for i, opt in enumerate(question.options[:4]):
+    for i, opt in enumerate(display_options[:4]):
         btn_text = f"{labels[i]}) {opt[:40]}..." if len(opt) > 40 else f"{labels[i]}) {opt}"
         keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"opt_{question.id}_{i}")])
     keyboard.append([
@@ -519,7 +582,7 @@ async def _send_question(target, question: Question, context: ContextTypes.DEFAU
         f"🧠 *مراجعة*\n"
         f"#{question.id} | {priority_text(question.priority)}{tags_text}{auto_text}\n"
         f"📊 سهولة: {question.ease_factor:.1f} | ❌ أخطاء: {question.wrong_count}\n\n"
-        f"{question.text}"
+        f"{display_text}"
     )
     if hasattr(target, 'edit_message_text'):
         await target.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
@@ -562,6 +625,7 @@ async def quiz_tag_selected(update, context):
     await _start_quiz(update, context, "tag", tag)
 
 async def quiz_option(update, context):
+    """معالج اختيار خيار من الأزرار"""
     query = update.callback_query
     await query.answer()
     _, qid_str, opt_idx_str = query.data.split('_')
@@ -570,24 +634,28 @@ async def quiz_option(update, context):
     if not question:
         await query.edit_message_text("❌ السؤال غير موجود.")
         return
+
     correct = (selected_idx == question.correct_index)
     quality = 5 if correct else 0
     updated = sm2_review(question, quality)
     await db.update_question(updated)
+
     result = "✅ *صحيح!* 👏" if correct else "❌ *خطأ!* 📚"
-    if not correct and question.explanation:
-        result += f"\n\n💡 *الشرح:* {question.explanation}"
-    rating_kb = InlineKeyboardMarkup([
+    buttons = [
         [InlineKeyboardButton("🔄 Again (0)", callback_data=f"rate_{qid}_0")],
         [InlineKeyboardButton("⚡ Hard (3)", callback_data=f"rate_{qid}_3")],
         [InlineKeyboardButton("✅ Good (4)", callback_data=f"rate_{qid}_4")],
         [InlineKeyboardButton("🌟 Easy (5)", callback_data=f"rate_{qid}_5")],
-        [InlineKeyboardButton("⏭ التالي", callback_data="next_question")]
-    ])
-    await query.edit_message_text(result, reply_markup=rating_kb, parse_mode=ParseMode.MARKDOWN)
+    ]
+    if not correct and question.explanation:
+        buttons.insert(0, [InlineKeyboardButton("📚 شرح الإجابة", callback_data=f"explain_{qid}")])
+    buttons.append([InlineKeyboardButton("⏭ التالي", callback_data="next_question")])
+
+    await query.edit_message_text(result, reply_markup=InlineKeyboardMarkup(buttons), parse_mode=ParseMode.MARKDOWN)
     context.user_data["last_question_id"] = qid
 
 async def quiz_rate(update, context):
+    """معالج تقييم الجودة (Again, Hard, Good, Easy)"""
     query = update.callback_query
     await query.answer()
     _, qid_str, quality_str = query.data.split('_')
@@ -597,6 +665,18 @@ async def quiz_rate(update, context):
         updated = sm2_review(question, quality)
         await db.update_question(updated)
     await next_question(update, context)
+
+async def quiz_explain(update, context):
+    """عرض الشرح في نافذة منبثقة"""
+    query = update.callback_query
+    await query.answer()
+    _, qid_str = query.data.split('_')
+    qid = int(qid_str)
+    question = await db.get_question(qid)
+    if question and question.explanation:
+        await query.answer(question.explanation, show_alert=True)
+    else:
+        await query.answer("لا يوجد شرح لهذا السؤال.", show_alert=True)
 
 async def next_question(update, context):
     query = update.callback_query
@@ -737,11 +817,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_error:
         for marker in ["#خطأ", "#غلط", "#weak", "#ضعيف"]:
             cleaned = cleaned.replace(marker, "").strip()
-    q_text, options, correct_idx = extract_options(cleaned)
+    q_text, options, correct_idx, explanation = extract_options(cleaned)
     q = Question(
         text=q_text,
         options=options,
         correct_index=correct_idx,
+        explanation=explanation,
         priority="urgent" if (fwd or is_error) else "normal",
         tags=["weak"] if is_error else [],
         auto_captured=fwd
@@ -800,11 +881,12 @@ async def wrong_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ الرسالة لا تحتوي على نص.")
         return
     cleaned = clean_text(raw)
-    q_text, options, correct_idx = extract_options(cleaned)
+    q_text, options, correct_idx, explanation = extract_options(cleaned)
     q = Question(
         text=q_text,
         options=options,
         correct_index=correct_idx,
+        explanation=explanation,
         priority="urgent",
         tags=["weak"],
         auto_captured=True
@@ -837,7 +919,7 @@ async def delete_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     try:
         qid = int(context.args[0])
-    except:
+    except ValueError:
         await update.message.reply_text("❌ رقم غير صحيح.")
         return
     ok = await db.delete_question(qid)
@@ -851,7 +933,7 @@ async def tag_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     try:
         qid = int(context.args[0])
-    except:
+    except ValueError:
         await update.message.reply_text("❌ رقم غير صحيح.")
         return
     tag = context.args[1].strip()
@@ -937,17 +1019,30 @@ async def daily_report_job(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"فشل التقرير اليومي: {e}")
 
-# ==================== معالج الأخطاء ====================
+# ==================== معالج الأخطاء المحسن ====================
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.error("استثناء:", exc_info=context.error)
-    if update and hasattr(update, "effective_chat") and update.effective_chat:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ حدث خطأ داخلي.")
+    logger.error("Exception while handling an update:", exc_info=context.error)
+    try:
+        if update and hasattr(update, "effective_chat") and update.effective_chat:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="⚠️ عذراً، حدث خطأ غير متوقع. تم إبلاغ المطور."
+            )
+        # إرسال تقرير للمطور إذا كان الخطأ غير معتاد
+        if ALLOWED_USER_ID:
+            import traceback
+            tb = "".join(traceback.format_exception(None, context.error, context.error.__traceback__))
+            await context.bot.send_message(
+                chat_id=ALLOWED_USER_ID,
+                text=f"⚠️ *خطأ في البوت:*\n```\n{tb[:3000]}\n```",
+                parse_mode=ParseMode.MARKDOWN
+            )
+    except Exception as e:
+        logger.error(f"فشل معالج الأخطاء نفسه: {e}")
 
-# ==================== الإعداد والتشغيل النهائي (بدون مشاكل حلقة الأحداث) ====================
-import nest_asyncio
-nest_asyncio.apply()  # يسمح بتداخل الحلقات (آمن)
-
-async def post_init(app):
+# ==================== الإعداد والتشغيل ====================
+async def post_init(app: Application):
+    """تنفيذ بعد تهيئة التطبيق"""
     app.bot_data["allowed_user_id"] = ALLOWED_USER_ID
     if app.job_queue:
         app.job_queue.run_daily(
@@ -957,14 +1052,14 @@ async def post_init(app):
         )
     logger.info("✅ البوت جاهز للعمل!")
 
-async def main():
+def main():
     # تهيئة قاعدة البيانات
-    await init_db()
+    asyncio.run(init_db())
     
-    # بناء التطبيق (بدون post_shutdown لتجنب التعقيدات)
-    app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
+    # بناء التطبيق
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     
-    # إضافة جميع المعالجات (نفس الكود السابق)
+    # تسجيل المعالجات
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
@@ -997,6 +1092,7 @@ async def main():
     app.add_handler(CallbackQueryHandler(quiz_tag_selected, pattern="^tag_"))
     app.add_handler(CallbackQueryHandler(quiz_option, pattern="^opt_"))
     app.add_handler(CallbackQueryHandler(quiz_rate, pattern="^rate_"))
+    app.add_handler(CallbackQueryHandler(quiz_explain, pattern="^explain_"))
     app.add_handler(CallbackQueryHandler(quiz_skip, pattern="^skip_"))
     app.add_handler(CallbackQueryHandler(next_question, pattern="^next_question$"))
     app.add_handler(CallbackQueryHandler(quiz_end, pattern="^end_quiz$"))
@@ -1009,7 +1105,7 @@ async def main():
     app.add_error_handler(error_handler)
     
     logger.info("🚀 تشغيل البوت...")
-    await app.run_polling(drop_pending_updates=True)
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
