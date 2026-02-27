@@ -124,25 +124,34 @@ class Database:
 
     @staticmethod
     async def get_stats() -> Dict[str, Any]:
-        async with async_session() as session:
-            total = await session.scalar(select(func.count(Question.id))) or 0
-            due = await session.scalar(
-                select(func.count(Question.id)).where(
-                    Question.next_review <= dt.now(timezone.utc)
-                )
-            ) or 0
-            urgent = await session.scalar(select(func.count(Question.id)).where(Question.priority == "urgent")) or 0
-            normal = await session.scalar(select(func.count(Question.id)).where(Question.priority == "normal")) or 0
-            low = await session.scalar(select(func.count(Question.id)).where(Question.priority == "low")) or 0
-            auto = await session.scalar(select(func.count(Question.id)).where(Question.auto_captured == True)) or 0
-            avg_ease = await session.scalar(select(func.avg(Question.ease_factor))) or 0.0
-            return {
-                "total": total,
-                "due": due,
-                "by_priority": {"urgent": urgent, "normal": normal, "low": low},
-                "auto_captured": auto,
-                "avg_ease": round(avg_ease, 2)
-            }
+    async with async_session() as session:
+        total = await session.scalar(select(func.count(Question.id))) or 0
+        due = await session.scalar(
+            select(func.count(Question.id)).where(
+                Question.next_review <= dt.now(timezone.utc).replace(tzinfo=None)
+            )
+        ) or 0
+        urgent = await session.scalar(
+            select(func.count(Question.id)).where(Question.priority == "urgent")
+        ) or 0
+        normal = await session.scalar(
+            select(func.count(Question.id)).where(Question.priority == "normal")
+        ) or 0
+        low = await session.scalar(
+            select(func.count(Question.id)).where(Question.priority == "low")
+        ) or 0
+        auto = await session.scalar(
+            select(func.count(Question.id)).where(Question.auto_captured == True)
+        ) or 0
+        avg_ease = await session.scalar(select(func.avg(Question.ease_factor))) or 0.0
+        
+        return {
+            "total": total,
+            "due": due,
+            "by_priority": {"urgent": urgent, "normal": normal, "low": low},
+            "auto_captured": auto,
+            "avg_ease": round(avg_ease, 2)
+        }
 
     @staticmethod
     async def get_weakest(limit: int = 5) -> List[Question]:
@@ -321,7 +330,7 @@ def get_level_info(total_reviews: int):
     }
 
 def get_next_question(questions: List[Question], mode: str = "all", tag: Optional[str] = None, exclude_id: Optional[int] = None) -> Optional[Question]:
-    now = dt.now(timezone.utc)
+    now = dt.now(timezone.utc).replace(tzinfo=None)  # naive datetime
     if mode == "due":
         filtered = [q for q in questions if q.next_review and q.next_review <= now]
     elif mode == "weak":
@@ -347,7 +356,7 @@ def sm2_review(question: Question, quality: int) -> Question:
     """تطبيق خوارزمية SM-2 على السؤال."""
     if quality < 0 or quality > 5:
         raise ValueError("quality must be 0-5")
-    now = dt.now(timezone.utc)
+    now = dt.now(timezone.utc).replace(tzinfo=None)  # naive datetime
     question.total_reviews += 1
     question.review_dates.append(now.isoformat())
     if quality >= 3:
@@ -358,7 +367,6 @@ def sm2_review(question: Question, quality: int) -> Question:
         question.wrong_count += 1
 
     if quality >= 3:
-        # تحديث ease factor
         new_ef = question.ease_factor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
         question.ease_factor = max(1.3, min(2.5, new_ef))
         if question.interval == 0:
