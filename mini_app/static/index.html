@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+  <title>Quiz Master Pro</title>
+  <link rel="manifest" href="/static/manifest.json"/>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"/>
+  <style>
+    :root{--bg:#0f0f1a;--card:#1a1a2e;--accent:#7b2cbf;--blue:#00d4ff;
+          --text:#e0e0ff;--sub:rgba(224,224,255,.55);--green:#22c55e;
+          --red:#ef4444;--r:18px;}
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:'Segoe UI',Tahoma,sans-serif;background:var(--bg);
+         color:var(--text);min-height:100vh;overflow-x:hidden;}
+    .nav{display:flex;justify-content:space-around;background:var(--card);
+         border-bottom:1px solid rgba(123,44,191,.3);padding:10px 0 6px;
+         position:sticky;top:0;z-index:100;}
+    .nav-btn{background:none;border:none;color:var(--sub);font-size:22px;
+             cursor:pointer;padding:4px 12px;border-radius:10px;transition:all .2s;}
+    .nav-btn.active{color:var(--accent);background:rgba(123,44,191,.15);}
+    .page{display:none;padding:16px;}
+    .page.active{display:block;}
+    .card{background:var(--card);border-radius:var(--r);padding:20px;
+          margin-bottom:14px;border:1px solid rgba(123,44,191,.2);}
+    .hero{text-align:center;padding:24px 16px;
+          background:linear-gradient(135deg,#1a0533,#0d2137);
+          border-radius:var(--r);margin-bottom:16px;}
+    .hero h1{font-size:26px;margin-bottom:6px;}
+    .hero .badge{font-size:48px;}
+    .level-bar{background:rgba(255,255,255,.1);border-radius:999px;height:8px;margin:10px 0;}
+    .level-bar-fill{height:8px;border-radius:999px;
+                    background:linear-gradient(90deg,var(--accent),var(--blue));
+                    transition:width .5s ease;}
+    .stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
+    .stat-box{background:rgba(255,255,255,.04);border-radius:14px;padding:16px;
+              text-align:center;border:1px solid rgba(255,255,255,.07);}
+    .stat-val{font-size:28px;font-weight:700;color:var(--blue);}
+    .stat-lbl{font-size:12px;color:var(--sub);margin-top:4px;}
+    .swiper{width:100%;height:430px;margin:10px 0;}
+    .swiper-slide{background:linear-gradient(135deg,#1a0533,#0d2137);
+                  border-radius:var(--r);display:flex;flex-direction:column;
+                  justify-content:space-between;padding:24px 20px;user-select:none;}
+    .q-meta{display:flex;justify-content:space-between;font-size:12px;color:var(--sub);}
+    .q-text{font-size:17px;line-height:1.7;flex:1;overflow-y:auto;padding:12px 0;}
+    .swipe-hint{display:flex;justify-content:space-between;font-size:13px;
+                padding-top:10px;border-top:1px solid rgba(255,255,255,.1);}
+    .swipe-left{color:var(--red);}.swipe-right{color:var(--green);}
+    .quiz-card{background:linear-gradient(135deg,#1a0533,#0d2137);
+               border-radius:var(--r);padding:24px;margin-bottom:14px;}
+    .quiz-meta{font-size:12px;color:var(--sub);margin-bottom:12px;}
+    .quiz-text{font-size:18px;line-height:1.7;margin-bottom:20px;font-weight:600;}
+    .options{display:flex;flex-direction:column;gap:10px;}
+    .opt-btn{background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.12);
+             color:var(--text);padding:14px 18px;border-radius:12px;cursor:pointer;
+             font-size:15px;text-align:right;transition:all .25s;}
+    .opt-btn:hover{background:rgba(123,44,191,.25);border-color:var(--accent);}
+    .opt-btn.correct{background:rgba(34,197,94,.2);border-color:var(--green)!important;}
+    .opt-btn.wrong  {background:rgba(239,68,68,.2); border-color:var(--red)!important;}
+    .opt-btn:disabled{cursor:not-allowed;opacity:.85;}
+    .explanation{background:rgba(0,212,255,.07);border-radius:12px;padding:14px;
+                 margin-top:14px;font-size:14px;border:1px solid rgba(0,212,255,.2);display:none;}
+    .rating-btns{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;
+                 margin-top:14px;display:none;}
+    .rate-btn{padding:10px 4px;border:none;border-radius:10px;font-size:13px;
+              cursor:pointer;font-weight:600;color:#fff;}
+    .rate-again{background:#ef4444;}.rate-hard{background:#f97316;}
+    .rate-good{background:#3b82f6;}.rate-easy{background:#22c55e;}
+    .pred-score{font-size:56px;font-weight:700;text-align:center;
+                background:linear-gradient(45deg,var(--blue),var(--accent));
+                -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:10px 0;}
+    .tag-row{display:flex;justify-content:space-between;align-items:center;
+             padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06);}
+    .tag-bar-wrap{height:6px;background:rgba(255,255,255,.1);border-radius:999px;
+                  flex:1;margin:0 12px;}
+    .tag-bar{height:6px;border-radius:999px;
+             background:linear-gradient(90deg,var(--accent),var(--blue));transition:width .6s;}
+    .offline-banner{background:rgba(239,68,68,.15);border:1px solid var(--red);
+                    border-radius:10px;padding:10px 16px;font-size:13px;
+                    text-align:center;margin-bottom:12px;display:none;}
+    .online-banner{background:rgba(34,197,94,.15);border:1px solid var(--green);
+                   border-radius:10px;padding:10px 16px;font-size:13px;
+                   text-align:center;margin-bottom:12px;display:none;}
+    .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+           background:#1e1e3a;color:var(--text);padding:10px 20px;
+           border-radius:999px;font-size:14px;z-index:999;
+           opacity:0;transition:opacity .3s;pointer-events:none;
+           border:1px solid rgba(123,44,191,.4);}
+    .toast.show{opacity:1;}
+    select{background:var(--card);color:var(--text);border:1px solid rgba(123,44,191,.4);
+           border-radius:10px;padding:10px;width:100%;}
+    ::-webkit-scrollbar{width:4px;}
+    ::-webkit-scrollbar-thumb{background:var(--accent);border-radius:2px;}
+  </style>
+</head>
+<body>
+<nav class="nav">
+  <button class="nav-btn active" onclick="showPage('home')"       data-page="home">🏠</button>
+  <button class="nav-btn"        onclick="showPage('quiz')"       data-page="quiz">🧠</button>
+  <button class="nav-btn"        onclick="showPage('flashcards')" data-page="flashcards">🎴</button>
+  <button class="nav-btn"        onclick="showPage('analytics')"  data-page="analytics">📊</button>
+</nav>
+
+<div style="padding:0 16px;">
+  <div id="offlineBanner" class="offline-banner">📴 وضع Offline — ستُزامَن المراجعات لاحقاً</div>
+  <div id="onlineBanner"  class="online-banner">✅ عدت للإنترنت — جاري المزامنة…</div>
+</div>
+
+<!-- HOME -->
+<div id="page-home" class="page active">
+  <div class="hero">
+    <div class="badge" id="homeBadge">🌱</div>
+    <h1>Quiz Master Pro</h1>
+    <p id="homeLevel" style="color:var(--sub);font-size:13px;">المستوى 1</p>
+    <div class="level-bar"><div class="level-bar-fill" id="xpBar" style="width:0%"></div></div>
+    <p id="xpText" style="font-size:12px;color:var(--sub);">XP: 0/10</p>
+  </div>
+  <div class="stats-grid">
+    <div class="stat-box"><div class="stat-val" id="statTotal">0</div><div class="stat-lbl">إجمالي الأسئلة</div></div>
+    <div class="stat-box"><div class="stat-val" id="statDue">0</div><div class="stat-lbl">مستحقة اليوم</div></div>
+    <div class="stat-box"><div class="stat-val" id="statAuto">0</div><div class="stat-lbl">🤖 صائد تلقائي</div></div>
+    <div class="stat-box"><div class="stat-val" id="statStreak">0</div><div class="stat-lbl">🔥 Streak</div></div>
+  </div>
+  <div style="margin-top:16px;display:flex;gap:10px;">
+    <button onclick="showPage('quiz')" style="flex:1;padding:14px;background:var(--accent);border:none;border-radius:12px;color:#fff;font-size:15px;cursor:pointer;">🧠 ابدأ مراجعة</button>
+    <button onclick="showPage('flashcards')" style="flex:1;padding:14px;background:var(--card);border:1px solid rgba(123,44,191,.4);border-radius:12px;color:#fff;font-size:15px;cursor:pointer;">🎴 Flashcards</button>
+  </div>
+</div>
+
+<!-- QUIZ -->
+<div id="page-quiz" class="page">
+  <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <select id="quizMode" onchange="loadNextQuestion()">
+      <option value="all">🧠 عامة</option>
+      <option value="due">📆 اليوم</option>
+      <option value="weak">❗ الضعف</option>
+    </select>
+    <select id="quizTag" onchange="loadNextQuestion()">
+      <option value="">كل المواد</option>
+    </select>
+  </div>
+  <div id="quizContainer"><div style="text-align:center;padding:40px;color:var(--sub);">⏳ جاري التحميل…</div></div>
+</div>
+
+<!-- FLASHCARDS -->
+<div id="page-flashcards" class="page">
+  <p style="color:var(--sub);font-size:13px;margin-bottom:10px;text-align:center;">← اسحب يسار (صعب) | اسحب يمين (سهل) →</p>
+  <div class="swiper" id="mainSwiper">
+    <div class="swiper-wrapper" id="swiperWrapper">
+      <div class="swiper-slide"><div class="q-text" style="text-align:center;color:var(--sub);margin-top:40px;">⏳ جاري التحميل…</div></div>
+    </div>
+  </div>
+  <p id="flashCounter" style="text-align:center;color:var(--sub);font-size:13px;"></p>
+</div>
+
+<!-- ANALYTICS -->
+<div id="page-analytics" class="page">
+  <div class="card" style="text-align:center;">
+    <p style="color:var(--sub);font-size:13px;">درجتك المتوقعة في القدرات</p>
+    <div class="pred-score" id="predScore">--</div>
+    <p id="predConf" style="font-size:13px;color:var(--sub);">جمع البيانات…</p>
+  </div>
+  <div class="card">
+    <p style="font-weight:600;margin-bottom:14px;">📚 النتائج حسب المادة</p>
+    <div id="tagBreak"><div style="color:var(--sub);font-size:14px;">لا بيانات بعد — أضف وسوماً للأسئلة</div></div>
+  </div>
+  <div class="card">
+    <div class="stats-grid">
+      <div class="stat-box"><div class="stat-val" id="anaRev">0</div><div class="stat-lbl">مراجعات</div></div>
+      <div class="stat-box"><div class="stat-val" id="anaStr">0</div><div class="stat-lbl">🔥 Streak</div></div>
+      <div class="stat-box"><div class="stat-val" id="anaStrong">0</div><div class="stat-lbl">✅ قوي</div></div>
+      <div class="stat-box"><div class="stat-val" id="anaWeak">0</div><div class="stat-lbl">❗ ضعيف</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
