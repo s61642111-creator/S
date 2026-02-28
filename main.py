@@ -21,7 +21,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any, Tuple
 
-from telegram import Update, InlineKeyboardButton, InInlineKeyboardMarkup, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ConversationHandler, ContextTypes, filters
@@ -941,14 +941,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         auto_captured=bool(msg.forward_date),
     )
     qid   = await db.add_question(obj)
-    reply = (
-        f"✅ *تم الحفظ!* #️⃣{qid} | {priority_text(obj.priority)}\n"
-        f"{'🏷️ وسم: weak\n' if is_error else ''}"
-        f"{'💡 ' if opts else '⚠️ لم تُكتشف خيارات — '}"
-        f"`/tag {qid} قدرات`"
-    )
-    await msg.reply_text(reply, parse_mode=ParseMode.MARKDOWN)
 
+    # تعديل هنا: استخدام إضافة نصوص بدلاً من f-string مع \n
+    reply = f"✅ *تم الحفظ!* #️⃣{qid} | {priority_text(obj.priority)}\n"
+    if is_error:
+        reply += "🏷️ وسم: weak\n"
+    if opts:
+        reply += f"💡 `/tag {qid} قدرات`"
+    else:
+        reply += "⚠️ لم تُكتشف خيارات — `/tag {qid} قدرات`"
+
+    await msg.reply_text(reply, parse_mode=ParseMode.MARKDOWN)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
