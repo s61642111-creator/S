@@ -50,7 +50,7 @@ from sqlalchemy.orm import declarative_base
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8242666905:AAHljuGOMBxWmYMsjPzAK0zDL7_tAqEYqeg")
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "6782657661"))
 DATABASE_URL    = os.environ.get("DATABASE_URL",    "sqlite+aiosqlite:///quiz_data.db")
-DAILY_HOUR      = int(os.environ.get("DAILY_REPORT_HOUR",   "7"))
+DAILY_HOUR      = int(os.environ.get("DAILY_REPORT_HOUR",   "5"))
 DAILY_MINUTE    = int(os.environ.get("DAILY_REPORT_MINUTE", "0"))
 
 # تحقق من المتغيرات الأساسية
@@ -1219,13 +1219,5 @@ async def main():
     logger.info("🚀 Quiz Master Pro 2026 — Started")
     await app.run_polling(drop_pending_updates=True)
 
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except RuntimeError as e:
-        if "Cannot close a running event loop" in str(e):
-            # تجاهل هذا الخطأ المحدد؛ الحلقة ستغلق تلقائياً عند خروج البرنامج
-            logger.info("تم تجاهل خطأ إغلاق الحلقة (معروف في بعض البيئات).")
-        else:
-            raise
+        if __name__ == "__main__":
+    asyncio.run(main())
