@@ -13,6 +13,14 @@ Quiz Master Pro 2026 — النسخة النهائية المعدلة للإنت
 
 import asyncio
 import logging
+import warnings
+from telegram.warnings import PTBUserWarning
+
+# تجاهل تحذيرات ConversationHandler (لا تؤثر على الأداء)
+warnings.filterwarnings("ignore", category=PTBUserWarning)
+
+# تجاهل تحذيرات coroutines غير المنتظرة (خاصة ببيئة Railway)
+warnings.filterwarnings("ignore", message="coroutine 'Application.*' was never awaited")
 import re
 import json
 import tempfile
