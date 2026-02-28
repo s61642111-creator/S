@@ -1213,4 +1213,11 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        if "Cannot close a running event loop" in str(e):
+            # تجاهل هذا الخطأ المحدد؛ الحلقة ستغلق تلقائياً عند خروج البرنامج
+            logger.info("تم تجاهل خطأ إغلاق الحلقة (معروف في بعض البيئات).")
+        else:
+            raise
